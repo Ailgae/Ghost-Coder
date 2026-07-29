@@ -31,6 +31,8 @@ npm install
 npm start
 ```
 
+## UI Description
+
 The sidebar lists your projects and their saved chats. Click **+** beside
 **Projects** to add a project and choose the directory the agent can work in.
 Use the **+** beside a project to start another chat or **⋯** to edit the
@@ -44,6 +46,9 @@ Type what you want built or fixed in the chat box. The agent will show each
 tool call it makes (reading files, writing files, running shell commands) as
 a collapsible line above its reply — click to expand and see arguments/output.
 Responses appear progressively as Ollama generates them.
+
+The settings button allows you to configure various preferences for the application.
+Click on it to access different settings options.
 
 ## 3. Build a distributable package
 
@@ -59,8 +64,8 @@ This uses `electron-builder` to produce the packaged application under `dist/`.
 - The Ollama client module calls `/api/chat` with `tools` attached.
 - `agent/tools.js` — implements `read_file`, `write_file`, `list_dir`, `run_shell`.
 - `agent/agent.js` — the loop: send messages → if the model asks for tool
-  calls, run them locally and feed results back → repeat until the model
-  gives a final text answer (capped at 25 steps per turn as a safety valve).
+calls, run them locally and feed results back → repeat until the model
+gives a final text answer (capped at 25 steps per turn as a safety valve).
 - `renderer/` — the chat UI (plain HTML/CSS/JS, no framework).
 
 ## Notes & things to tighten up later
