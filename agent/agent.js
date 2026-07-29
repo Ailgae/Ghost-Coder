@@ -142,7 +142,9 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, streamRespon
       fileChangeSummary(initialSnapshot, projectSnapshot(cwd))
     );
     onEvent({ type: 'final', content: finalText });
-    finishTurn(state, turnStartIndex, userMessage, responseText);
+    // Persist the change metadata so its file widgets survive an app restart.
+    // compactPreviousContext removes it before the history is sent to the model.
+    finishTurn(state, turnStartIndex, userMessage, finalText);
     return finalText;
   }
 

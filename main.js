@@ -84,6 +84,32 @@ function chatSummary(chat) {
   return { id: chat.id, title: chat.title, createdAt: chat.createdAt };
 }
 
+function recoverPersistedChangeMessages(chat) {
+  if (!Array.isArray(chat.messages) || !Array.isArray(chat.history)) return false;
+  let changed = false;
+  chat.messages.forEach((message, index) => {
+    if (
+      message.role !== 'assistant' ||
+      typeof message.content !== 'string' ||
+      !message.content.includes('\n\nDiff data:\n') ||
+      chat.history.some(item => item.role === 'agent' && item.content === message.content)
+    ) return;
+
+    const precedingUser = [...chat.messages.slice(0, index)].reverse()
+      .find(item => item.role === 'user' && typeof item.content === 'string');
+    let insertAt = chat.history.length;
+    if (precedingUser) {
+      const userIndex = chat.history.findLastIndex(item =>
+        item.role === 'user' && item.content === precedingUser.content
+      );
+      if (userIndex !== -1) insertAt = userIndex + 1;
+    }
+    chat.history.splice(insertAt, 0, { role: 'agent', content: message.content });
+    changed = true;
+  });
+  return changed;
+}
+
 function changeSummaryParts(content) {
   if (typeof content !== 'string') return null;
   const diffMarker = '\n\nDiff data:\n';
@@ -287,6 +313,7 @@ app.whenReady().then(() => {
   ipcMain.handle('chats:get', (_evt, projectId, chatId) => {
     const chat = chatById(projectId, chatId);
     if (!chat) throw new Error('Chat not found');
+    if (recoverPersistedChangeMessages(chat)) saveConversations();
     return { id: chat.id, history: chat.history };
   });
   ipcMain.handle('chats:new', (_evt, projectId) => {
@@ -361,6 +388,7 @@ app.whenReady().then(() => {
     saveConversations();
     try {
       const content = await runAgentTurn({ state: chat, userMessage: text, serverUrl: settings.serverUrl, model: settings.model, streamResponses: settings.streamResponses, allowGit: settings.allowGit, cwd: project.cwd, signal: controller.signal, approveTool: (name, args) => approveTool(sender, chatId, project.cwd, name, args), onEvent: event => sender.send('chat:event', { ...event, chatId }) });
+      chat.history.push({ role: 'agent', content });
       saveConversations();
       return { ok: true, content, title: chat.title };
     } catch (err) {

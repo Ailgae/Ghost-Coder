@@ -134,6 +134,16 @@ function appendChangeSummary(text, changes) {
   return `${text.trim()}\n\nFiles changed:\n${lines.join('\n')}\n\nDiff data:\n${diffData}`;
 }
 
+function stripChangeSummary(text) {
+  if (typeof text !== 'string') return text;
+  const diffMarker = '\n\nDiff data:\n';
+  const diffIndex = text.lastIndexOf(diffMarker);
+  if (diffIndex === -1) return text;
+  const filesIndex = text.lastIndexOf('\n\nFiles changed:\n', diffIndex);
+  if (filesIndex === -1) return text;
+  return text.slice(0, filesIndex).trim();
+}
+
 function compactPreviousContext(messages) {
   return messages.filter((message, index) => {
     if (message.role === 'tool') return false;
@@ -147,9 +157,11 @@ function compactPreviousContext(messages) {
     return true;
   }).map(message => {
     if (message.role === 'agent' || message.role === 'error') {
-      return { ...message, role: 'assistant' };
+      return { ...message, role: 'assistant', content: stripChangeSummary(message.content) };
     }
-    return message;
+    return message.role === 'assistant'
+      ? { ...message, content: stripChangeSummary(message.content) }
+      : message;
   });
 }
 
@@ -190,6 +202,7 @@ module.exports = {
   changedLineCounts,
   fileChangeSummary,
   appendChangeSummary,
+  stripChangeSummary,
   compactPreviousContext,
   finishTurn,
   systemPrompt

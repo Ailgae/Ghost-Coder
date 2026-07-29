@@ -73,6 +73,7 @@ describe('agent change tracking', () => {
       { path: 'a.txt', before: null, after: 'x' }
     ]);
     assert.equal(helpers.appendChangeSummary('unchanged', []), 'unchanged');
+    assert.equal(helpers.stripChangeSummary(result), 'Finished.');
   });
 
   it('compacts tool traffic and normalizes stored agent/error roles', () => {
@@ -82,7 +83,9 @@ describe('agent change tracking', () => {
       { role: 'assistant', content: '', tool_calls: [{ function: { name: 'read_file' } }] },
       { role: 'tool', content: '{}' },
       { role: 'user', content: 'Continue implementing the original request: "x"' },
-      { role: 'agent', content: 'done' },
+      { role: 'agent', content: helpers.appendChangeSummary('done', [
+        { path: 'a.txt', added: 1, removed: 0, before: null, after: 'x' }
+      ]) },
       { role: 'error', content: 'failed' }
     ]);
     assert.deepEqual(messages, [
