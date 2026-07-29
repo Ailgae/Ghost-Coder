@@ -6,6 +6,8 @@ A tiny native-feeling chat app that talks to a remote Ollama server and acts
 as a coding agent: it can read/write files, run shell commands (npm,
 tests, builds — anything), and loop on tool calls until the task is done.
 
+![Ghost Coder app showing a coding conversation and file changes](assets/app-screenshot.png)
+
 ## 1. Requirements
 - [Node.js](https://nodejs.org) 22.12+ (required by the Electron build toolchain)
 - A machine that can run Ollama with a tool-calling-capable model pulled, e.g.:
