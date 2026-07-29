@@ -7,12 +7,10 @@ as a coding agent: it can read/write files, run non-Git shell commands (npm,
 tests, builds — anything), and loop on tool calls until the task is done.
 
 ## 1. Requirements
-- [Node.js](https://nodejs.org) 18+ (for the built-in `fetch` used to call Ollama)
-- Ollama running locally at `http://localhost:11434`,
-  with a tool-calling-capable model pulled, e.g.:
+- [Node.js](https://nodejs.org) 22.12+ (required by the Electron build toolchain)
+- A machine that can run Ollama with a tool-calling-capable model pulled, e.g.:
 
   ```bash
-  # on the local machine
   ollama pull qwen2.5-coder
   ```
 
@@ -52,11 +50,43 @@ Click on it to access different settings options.
 
 ## 3. Build a distributable package
 
+Install the dependencies before building:
+
+```bash
+npm install
+```
+
+Build for a specific platform:
+
+```bash
+# macOS Apple Silicon and Intel/AMD64: DMG and ZIP
+npx electron-builder --mac --arm64 --x64
+
+# Windows x64: NSIS installer
+npx electron-builder --win --x64
+
+# Linux x64: AppImage and Snap
+npx electron-builder --linux --x64
+```
+
+To build all supported platform/architecture combinations:
+
+```bash
+npx electron-builder --mac --arm64 --x64
+npx electron-builder --win --x64
+npx electron-builder --linux --x64
+```
+
+To build for the current platform using the package script:
+
 ```bash
 npm run dist
 ```
 
-This uses `electron-builder` to produce the packaged application under `dist/`.
+All artifacts are written to `dist/`. Cross-platform builds may download
+additional Electron runtimes and packaging tools. macOS releases are unsigned
+unless a valid Developer ID Application certificate is installed, so Gatekeeper
+may warn when opening an unsigned build.
 
 ## How it works
 
@@ -66,9 +96,9 @@ This uses `electron-builder` to produce the packaged application under `dist/`.
 - `agent/agent.js` — the loop: send messages → if the model asks for tool
 calls, run them locally and feed results back → repeat until the model
 gives a final text answer (capped at 25 steps per turn as a safety valve).
-- `renderer/` — the chat UI (plain HTML/CSS/JS, no framework).
+- `renderer/` — the chat UI.
 
-## Notes & things to tighten up later
+## Notes
 
 - **Approval prompts.** Reading files and listing directories happen
   automatically. Writing or deleting files and running shell commands require
