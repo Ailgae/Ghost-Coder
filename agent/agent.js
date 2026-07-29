@@ -1,5 +1,5 @@
 const { chat } = require('./ollamaClient');
-const { toolDefinitions, executeTool } = require('./tools');
+const { getToolDefinitions, executeTool } = require('./tools');
 const { extractFallbackToolCalls } = require('./toolCallFallback');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -127,14 +127,17 @@ function appendChangeSummary(text, changes) {
   return `${text.trim()}\n\nFiles changed:\n${lines.join('\n')}`;
 }
 
-function systemPrompt(cwd) {
+function systemPrompt(cwd, allowGit) {
+  const gitCapabilities = allowGit
+    ? 'You may run Git commands and modify Git metadata when needed to fulfill the user’s request.'
+    : 'Never run Git commands, access or modify .git metadata, create commits or tags, change branches, or push to a remote. Repository management belongs exclusively to the user.';
   return `You are an autonomous coding agent running on the user's Mac, operating in the project directory: ${cwd}
 
-You have tools to read/write files, list directories, and run non-Git shell commands (npm, pip, tests, builds, etc). You have full autonomy to use them without asking for confirmation.
+You have tools to read/write files, list directories, and run shell commands (npm, pip, tests, builds, etc). You have full autonomy to use them without asking for confirmation.
 
 Guidelines:
 - Break down the user's request into concrete steps and carry them out using the tools, rather than just describing what should be done.
-- Never run Git commands, access or modify .git metadata, create commits or tags, change branches, or push to a remote. Repository management belongs exclusively to the user.
+- ${gitCapabilities}
 - Always invoke tools using the proper tool-calling mechanism. Never write raw JSON describing a tool call as plain text in your reply — if you want to call a tool, actually call it.
 - For a request to change the project, you must inspect the relevant files and make the edit with write_file or run_shell before replying. A plan or explanation alone is not a completed change.
 - Prefer running relevant tests or build commands (e.g. "npm test") to verify changes.
@@ -150,16 +153,16 @@ Guidelines:
  * onEvent also receives incremental `content_delta` events while Ollama
  * generates text, along with tool, thinking, note, and final events.
  */
-async function runAgentTurn({ state, userMessage, serverUrl, model, streamResponses = true, cwd, onEvent, signal }) {
+async function runAgentTurn({ state, userMessage, serverUrl, model, streamResponses = true, allowGit = false, cwd, onEvent, signal }) {
   const changeRequired = requiresFileChange(userMessage);
   let verifiedChanges = 0;
   let changeRetries = 0;
   const initialSnapshot = projectSnapshot(cwd);
   let lastSnapshot = initialSnapshot;
 
-  if (state.messages.length === 0) {
-    state.messages.push({ role: 'system', content: systemPrompt(cwd) });
-  }
+  const prompt = { role: 'system', content: systemPrompt(cwd, allowGit) };
+  if (state.messages[0]?.role === 'system') state.messages[0] = prompt;
+  else state.messages.unshift(prompt);
   state.messages.push({ role: 'user', content: userMessage });
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
@@ -168,7 +171,7 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, streamRespon
       serverUrl,
       model,
       messages: state.messages,
-      tools: toolDefinitions,
+      tools: getToolDefinitions(allowGit),
       stream: streamResponses,
       signal,
       onContent: streamResponses ? content => onEvent({ type: 'content_delta', content }) : null
@@ -198,7 +201,7 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, streamRespon
         const { name, arguments: args, id } = call;
         onEvent({ type: 'tool_call', name, args });
 
-        const result = await executeTool(name, args, cwd);
+        const result = await executeTool(name, args, cwd, { allowGit });
         const nextSnapshot = projectSnapshot(cwd);
         const changedFiles = changedPaths(lastSnapshot, nextSnapshot);
         if (changedFiles.length > 0) {

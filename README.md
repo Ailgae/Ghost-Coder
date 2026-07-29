@@ -74,10 +74,8 @@ gives a final text answer (capped at 25 steps per turn as a safety valve).
   it will run shell commands (including destructive ones) without asking.
   If you want a safety net, the easiest addition is a per-command confirm
   dialog in `tools.js`'s `run_shell` case.
-- **Git is protected.** The agent cannot run Git commands or modify `.git`
-  metadata. Commits, branches, tags, and pushes remain under your control.
-- **Single conversation.** The current conversation and agent context persist
-  across app restarts. Use "New chat" to clear the saved conversation.
+- **Git is protected by default.** Enable **Allow Git modifications** in
+  Settings to let the agent run Git commands and modify `.git` metadata.
 - **Model must support tool calling.** Qwen2.5-coder, Llama 3.1+, and Mistral
   Nemo all work with Ollama's tool-calling format. Older/smaller models may
   ignore the `tools` field and just reply with plain text.

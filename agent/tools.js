@@ -3,7 +3,7 @@ const path = require('path');
 const { exec } = require('child_process');
 
 // Tool definitions in Ollama/OpenAI function-calling format.
-const toolDefinitions = [
+const baseToolDefinitions = [
   {
     type: 'function',
     function: {
@@ -50,7 +50,7 @@ const toolDefinitions = [
     type: 'function',
     function: {
       name: 'run_shell',
-      description: 'Run a non-Git shell command in the project working directory. Git commands and access to Git metadata are blocked.',
+      description: 'Run a shell command in the project working directory.',
       parameters: {
         type: 'object',
         properties: {
@@ -77,6 +77,21 @@ const toolDefinitions = [
   }
 ];
 
+function getToolDefinitions(allowGit = false) {
+  return baseToolDefinitions.map(tool => {
+    if (tool.function.name !== 'run_shell') return tool;
+    return {
+      ...tool,
+      function: {
+        ...tool.function,
+        description: allowGit
+          ? 'Run a shell command in the project working directory, including Git commands.'
+          : 'Run a non-Git shell command in the project working directory. Git commands and access to Git metadata are blocked.'
+      }
+    };
+  });
+}
+
 function resolvePath(cwd, p) {
   if (!p) return cwd;
   return path.isAbsolute(p) ? p : path.join(cwd, p);
@@ -92,7 +107,7 @@ function attemptsGitAccess(command) {
   return gitExecutable.test(command) || gitMetadata.test(command);
 }
 
-async function executeTool(name, rawArgs, cwd) {
+async function executeTool(name, rawArgs, cwd, { allowGit = false } = {}) {
   let args = rawArgs;
   if (typeof rawArgs === 'string') {
     try { args = JSON.parse(rawArgs); } catch (e) { args = {}; }
@@ -109,7 +124,7 @@ async function executeTool(name, rawArgs, cwd) {
 
       case 'write_file': {
         const target = resolvePath(cwd, args.path);
-        if (touchesGitMetadata(target)) {
+        if (!allowGit && touchesGitMetadata(target)) {
           return { ok: false, error: 'Git metadata is protected and cannot be modified.' };
         }
         const content = args.content ?? '';
@@ -137,13 +152,18 @@ async function executeTool(name, rawArgs, cwd) {
       }
 
       case 'run_shell': {
-        if (attemptsGitAccess(args.command || '')) {
+        if (!allowGit && attemptsGitAccess(args.command || '')) {
           return { ok: false, error: 'Git commands and Git metadata access are disabled.' };
         }
         const timeoutMs = (args.timeout_seconds || 120) * 1000;
         const result = await new Promise((resolve) => {
-          const gitDisabledPath = path.join(cwd, '.ghost-coder-git-disabled');
-          const env = { ...process.env, GIT_DIR: gitDisabledPath, GIT_WORK_TREE: gitDisabledPath };
+          const env = allowGit
+            ? process.env
+            : {
+                ...process.env,
+                GIT_DIR: path.join(cwd, '.ghost-coder-git-disabled'),
+                GIT_WORK_TREE: path.join(cwd, '.ghost-coder-git-disabled')
+              };
           exec(args.command, { cwd, env, timeout: timeoutMs, maxBuffer: 1024 * 1024 * 10, shell: '/bin/bash' },
             (error, stdout, stderr) => {
               resolve({
@@ -160,7 +180,7 @@ async function executeTool(name, rawArgs, cwd) {
 
       case 'delete_file': {
         const target = resolvePath(cwd, args.path);
-        if (touchesGitMetadata(target)) {
+        if (!allowGit && touchesGitMetadata(target)) {
           return { ok: false, error: 'Git metadata is protected and cannot be deleted.' };
         }
         try {
@@ -182,4 +202,4 @@ async function executeTool(name, rawArgs, cwd) {
   }
 }
 
-module.exports = { toolDefinitions, executeTool };
+module.exports = { getToolDefinitions, executeTool };
