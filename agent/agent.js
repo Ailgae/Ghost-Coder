@@ -72,7 +72,8 @@ Guidelines:
  * Runs one full agent turn: takes the user's message, drives the tool-calling
  * loop against Ollama, and streams progress via onEvent. Mutates `state.messages`.
  *
- * onEvent receives: { type: 'tool_call', name, args } | { type: 'tool_result', name, result } | { type: 'final', content }
+ * onEvent also receives incremental `content_delta` events while Ollama
+ * generates text, along with tool, thinking, note, and final events.
  */
 async function runAgentTurn({ state, userMessage, serverUrl, model, cwd, onEvent, signal }) {
   const changeRequired = requiresFileChange(userMessage);
@@ -87,7 +88,14 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, cwd, onEvent
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     if (signal && signal.aborted) throw new Error('Response stopped.');
-    const message = await chat({ serverUrl, model, messages: state.messages, tools: toolDefinitions, signal });
+    const message = await chat({
+      serverUrl,
+      model,
+      messages: state.messages,
+      tools: toolDefinitions,
+      signal,
+      onContent: content => onEvent({ type: 'content_delta', content })
+    });
     state.messages.push(message);
 
     const thinking = typeof message.thinking === "string" ? message.thinking.trim() : "";

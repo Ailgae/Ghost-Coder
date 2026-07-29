@@ -20,7 +20,7 @@ function loadSettings() {
     ? saved.projects
     : [{ id: id(), name: path.basename(cwd) || 'My project', cwd }];
   return {
-    serverUrl: saved.serverUrl || 'http://192.168.68.51:11434',
+    serverUrl: saved.serverUrl || 'http://localhost:11434',
     model: saved.model || 'qwen2.5-coder',
     projects,
     activeProjectId: projects.some(project => project.id === saved.activeProjectId) ? saved.activeProjectId : (projects[0]?.id || null)

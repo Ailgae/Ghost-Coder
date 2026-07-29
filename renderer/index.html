@@ -8,7 +8,7 @@
 <body>
   <div class="app">
     <aside class="sidebar">
-      <div class="brand">Ghost coder</div>
+      <div class="brand"><img src="../assets/logo.png" alt="Ghost Coder" /></div>
       <div class="sidebar-heading"><span>Projects</span><button id="addProjectBtn" class="icon-btn" type="button" title="Add project" aria-label="Add project">+</button></div>
       <div id="projectsList" class="projects-list"></div>
       <!-- Removed the New chat button -->
@@ -31,7 +31,7 @@
     </main>
   </div>
 
-  <div id="connectionModal" class="modal" hidden><form id="connectionForm" class="modal-card"><h2>Server endpoint</h2><label class="field-label" for="serverUrl">Ollama server</label><input id="serverUrl" type="text" placeholder="http://192.168.68.51:11434" /><div class="modal-actions"><button id="cancelConnectionBtn" type="button" class="secondary-btn">Cancel</button><button id="connectBtn" type="submit">Connect</button></div></form></div>
+  <div id="connectionModal" class="modal" hidden><form id="connectionForm" class="modal-card"><h2>Server endpoint</h2><label class="field-label" for="serverUrl">Ollama server</label><input id="serverUrl" type="text" placeholder="http://localhost:11434" /><div class="modal-actions"><button id="cancelConnectionBtn" type="button" class="secondary-btn">Cancel</button><button id="connectBtn" type="submit">Connect</button></div></form></div>
   <div id="projectModal" class="modal" hidden><form id="projectForm" class="modal-card"><h2 id="projectModalTitle">Add project</h2><label class="field-label" for="projectName">Project name</label><input id="projectName" type="text" placeholder="My project" /><label class="field-label" for="projectPath">Project directory</label><div class="dir-row"><input id="projectPath" type="text" placeholder="/path/to/project" /><button id="pickProjectDirBtn" type="button" title="Choose folder">📁</button></div><div class="modal-actions"><button id="removeProjectBtn" type="button" class="danger-btn" hidden>Remove project</button><span class="modal-actions-spacer"></span><button id="cancelProjectBtn" type="button" class="secondary-btn">Cancel</button><button type="submit">Save project</button></div></form></div>
   <script src="renderer.js"></script>
 </body>

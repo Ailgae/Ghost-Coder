@@ -50,10 +50,17 @@ html, body {
 }
 
 .brand {
-  font-weight: 600;
-  font-size: 14px;
   margin: 22px 0 18px 2px;
-  letter-spacing: 0.2px;
+  width: 190px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+}
+
+.brand img {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 .field-label {
