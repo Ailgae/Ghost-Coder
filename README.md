@@ -59,24 +59,22 @@ cd Ghost-Coder
 npm install
 ```
 
-Build for a specific platform:
+Build commands:
 
 ```bash
-# macOS Apple Silicon and Intel/AMD64: DMG and ZIP
-npx electron-builder --mac --arm64 --x64
+# All platforms at once
+npx electron-builder --mac --arm64 --x64 --win --x64 --linux --x64
 
-# Windows x64: NSIS installer
+# macOS (Apple Silicon / ARM64)
+npx electron-builder --mac --arm64
+
+# macOS (Intel / x64)
+npx electron-builder --mac --x64
+
+# Windows (x64)
 npx electron-builder --win --x64
 
-# Linux x64: AppImage and Snap
-npx electron-builder --linux --x64
-```
-
-To build all supported platform/architecture combinations:
-
-```bash
-npx electron-builder --mac --arm64 --x64
-npx electron-builder --win --x64
+# Linux (x64)
 npx electron-builder --linux --x64
 ```
 
@@ -98,8 +96,8 @@ may warn when opening an unsigned build.
 - The Ollama client module calls `/api/chat` with `tools` attached.
 - `agent/tools.js` — implements `read_file`, `write_file`, `list_dir`, `run_shell`.
 - `agent/agent.js` — the loop: send messages → if the model asks for tool
-calls, run them locally and feed results back → repeat until the model
-gives a final text answer (capped at 25 steps per turn as a safety valve).
+  calls, run them locally and feed results back → repeat until the model
+  gives a final text answer (capped at 25 steps per turn as a safety valve).
 - `renderer/` — the chat UI.
 
 ## Notes
