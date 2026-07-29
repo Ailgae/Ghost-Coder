@@ -87,6 +87,44 @@ function appendStreamedContent(content) { if (!streamingBubble) { streamingBubbl
 function discardStreamedContent() { if (streamingBubble) streamingBubble.remove(); streamingBubble = null; }
 function addAction(title, detail) { const element = document.createElement('details'); element.className = 'action'; element.innerHTML = '<summary></summary><pre></pre>'; element.querySelector('summary').textContent = title; element.querySelector('pre').textContent = detail; messagesEl.append(element); scrollToBottom(); }
 function describeToolCall(name, args) { return ({ read_file: `Reading ${args.path}`, write_file: `Writing ${args.path}`, list_dir: `Listing ${args.path || '.'}`, run_shell: `$ ${args.command}` })[name] || `Calling ${name}`; }
+function removeApproval(approvalId) { messagesEl.querySelector(`[data-approval-id="${approvalId}"]`)?.remove(); }
+function addApproval(event) {
+  const card = document.createElement('section');
+  card.className = 'approval-card';
+  card.dataset.approvalId = event.approvalId;
+  const heading = document.createElement('strong');
+  heading.textContent = event.message;
+  const detail = document.createElement('pre');
+  detail.textContent = event.detail;
+  const actions = document.createElement('div');
+  actions.className = 'approval-actions';
+  const choices = [
+    { value: 'deny', label: 'Deny', className: 'approval-deny' },
+    { value: 'allow', label: 'Allow once', className: 'approval-allow' }
+  ];
+  if (event.canRemember) choices.push({ value: 'always', label: 'Always allow for this file', className: 'approval-always' });
+  choices.forEach(choice => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = choice.className;
+    button.textContent = choice.label;
+    button.onclick = async () => {
+      actions.querySelectorAll('button').forEach(item => { item.disabled = true; });
+      const accepted = await window.vibe.answerApproval({ approvalId: event.approvalId, choice: choice.value });
+      if (accepted) {
+        card.remove();
+        setStatus('Working…');
+      } else {
+        actions.querySelectorAll('button').forEach(item => { item.disabled = false; });
+      }
+    };
+    actions.append(button);
+  });
+  card.append(heading, detail, actions);
+  messagesEl.append(card);
+  setStatus('Waiting for approval…');
+  scrollToBottom();
+}
 
 function setModelOptions(models, selected, placeholder) { modelEl.replaceChildren(); const first = new Option(placeholder, ''); first.disabled = true; modelEl.add(first); models.forEach(model => modelEl.add(new Option(model, model))); modelEl.value = models.includes(selected) ? selected : ''; }
 function preferredModel(models, preferred) { if (models.includes(preferred)) return preferred; if (preferred && !preferred.includes(':') && models.includes(`${preferred}:latest`)) return `${preferred}:latest`; return models[0] || ''; }
@@ -147,5 +185,14 @@ stopBtn.onclick = async () => { if (sending) { stopBtn.disabled = true; setStatu
 composerInput.oninput = () => { composerInput.style.height = 'auto'; composerInput.style.height = `${Math.min(composerInput.scrollHeight, 160)}px`; };
 composerInput.onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); composerForm.requestSubmit(); } };
 composerForm.onsubmit = async event => { event.preventDefault(); const text = composerInput.value.trim(); if (sending || !text || !modelEl.value) return; if (!activeProjectId || !activeChatId) return setStatus('Add a project before sending a message.'); composerInput.value = ''; composerInput.style.height = 'auto'; streamingBubble = null; addBubble('user', text); setSending(true); setStatus('Working…'); const result = await window.vibe.sendMessage({ projectId: activeProjectId, chatId: activeChatId, text }); if (result.ok) { if (streamingBubble) renderFinalAgentContent(streamingBubble, result.content); else addBubble('agent', result.content); chatTitleEl.textContent = result.title; } else addBubble('error', `Error: ${result.error}`); streamingBubble = null; setStatus(result.ok ? 'Ready' : 'Error'); setSending(false); stopBtn.disabled = false; await renderProjects(); };
-window.vibe.onEvent(event => { if (event.chatId !== activeChatId) return; if (event.type === 'content_delta') appendStreamedContent(event.content); else if (event.type === 'note') addBubble('agent', event.content); else if (event.type === 'thinking') addAction('Thinking', event.content); else if (event.type === 'tool_call') { discardStreamedContent(); addAction(describeToolCall(event.name, event.args), JSON.stringify(event.args, null, 2)); } else if (event.type === 'tool_result') addAction(`${event.result?.ok ? '✓' : '✗'} ${event.name} result`, JSON.stringify(event.result, null, 2)); });
+window.vibe.onEvent(event => {
+  if (event.type === 'approval_cancelled') return removeApproval(event.approvalId);
+  if (event.chatId !== activeChatId) return;
+  if (event.type === 'content_delta') appendStreamedContent(event.content);
+  else if (event.type === 'note') addBubble('agent', event.content);
+  else if (event.type === 'thinking') addAction('Thinking', event.content);
+  else if (event.type === 'tool_call') { discardStreamedContent(); addAction(describeToolCall(event.name, event.args), JSON.stringify(event.args, null, 2)); }
+  else if (event.type === 'tool_result') addAction(`${event.result?.ok ? '✓' : '✗'} ${event.name} result`, JSON.stringify(event.result, null, 2));
+  else if (event.type === 'approval_request') addApproval(event);
+});
 initialize().catch(error => setStatus(`Startup error: ${error.message}`));

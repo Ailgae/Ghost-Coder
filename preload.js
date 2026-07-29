@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('vibe', {
   newChat: (projectId) => ipcRenderer.invoke('chats:new', projectId),
   removeChat: (projectId, chatId) => ipcRenderer.invoke('chats:remove', projectId, chatId),
   sendMessage: (payload) => ipcRenderer.invoke('chat:send', payload),
+  answerApproval: (payload) => ipcRenderer.invoke('chat:approve', payload),
   stopMessage: () => ipcRenderer.invoke('chat:stop'),
   onEvent: (callback) => {
     const handler = (_evt, payload) => callback(payload);

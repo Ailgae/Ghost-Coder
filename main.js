@@ -24,6 +24,9 @@ function loadSettings() {
     model: saved.model || 'qwen2.5-coder',
     streamResponses: saved.streamResponses !== false,
     allowGit: saved.allowGit === true,
+    approvedWriteFiles: Array.isArray(saved.approvedWriteFiles)
+      ? [...new Set(saved.approvedWriteFiles.filter(file => typeof file === 'string').map(file => path.resolve(file)))]
+      : [],
     projects,
     activeProjectId: projects.some(project => project.id === saved.activeProjectId) ? saved.activeProjectId : (projects[0]?.id || null)
   };
@@ -59,6 +62,7 @@ function saveConversations() {
 let settings = loadSettings();
 let conversations = loadConversations();
 const activeRequests = new Map();
+const pendingApprovals = new Map();
 
 function projectById(projectId) {
   return settings.projects.find(project => project.id === projectId);
@@ -85,6 +89,68 @@ function createWindow() {
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   return win;
+}
+
+function parseToolArgs(rawArgs) {
+  if (typeof rawArgs !== 'string') return rawArgs || {};
+  try { return JSON.parse(rawArgs); } catch { return {}; }
+}
+
+function approveTool(sender, chatId, cwd, name, rawArgs) {
+  const args = parseToolArgs(rawArgs);
+  const target = args.path
+    ? path.resolve(cwd, args.path)
+    : null;
+
+  if (name === 'write_file' && target && settings.approvedWriteFiles.includes(target)) {
+    return true;
+  }
+
+  const descriptions = {
+    write_file: {
+      message: 'Allow the agent to write this file?',
+      detail: target || '(path not provided)'
+    },
+    delete_file: {
+      message: 'Allow the agent to delete this file?',
+      detail: target || '(path not provided)'
+    },
+    run_shell: {
+      message: 'Allow the agent to run this shell command?',
+      detail: args.command || '(command not provided)'
+    }
+  };
+  const request = descriptions[name];
+  if (!request) return true;
+  const canRemember = name === 'write_file' && Boolean(target);
+
+  return new Promise(resolve => {
+    const approvalId = id();
+    pendingApprovals.set(approvalId, {
+      senderId: sender.id,
+      resolve,
+      name,
+      target
+    });
+    sender.send('chat:event', {
+      type: 'approval_request',
+      chatId,
+      approvalId,
+      name,
+      message: request.message,
+      detail: request.detail,
+      canRemember
+    });
+  });
+}
+
+function cancelPendingApprovals(sender) {
+  for (const [approvalId, approval] of pendingApprovals) {
+    if (approval.senderId !== sender.id) continue;
+    pendingApprovals.delete(approvalId);
+    approval.resolve(false);
+    sender.send('chat:event', { type: 'approval_cancelled', approvalId });
+  }
 }
 
 app.whenReady().then(() => {
@@ -152,7 +218,24 @@ app.whenReady().then(() => {
   ipcMain.handle('chat:stop', evt => {
     const controller = activeRequests.get(evt.sender.id);
     if (controller) controller.abort();
+    cancelPendingApprovals(evt.sender);
     return Boolean(controller);
+  });
+  ipcMain.handle('chat:approve', (evt, { approvalId, choice }) => {
+    const approval = pendingApprovals.get(approvalId);
+    if (!approval || approval.senderId !== evt.sender.id) return false;
+    pendingApprovals.delete(approvalId);
+
+    const rememberWrite = choice === 'always' && approval.name === 'write_file' && Boolean(approval.target);
+    const approved = choice === 'allow' || rememberWrite;
+    if (rememberWrite) {
+      if (!settings.approvedWriteFiles.includes(approval.target)) {
+        settings.approvedWriteFiles.push(approval.target);
+        saveSettings();
+      }
+    }
+    approval.resolve(approved);
+    return true;
   });
   ipcMain.handle('chat:send', async (evt, { projectId, chatId, text }) => {
     const sender = evt.sender;
@@ -165,7 +248,7 @@ app.whenReady().then(() => {
     if (chat.title === 'New chat') chat.title = text.replace(/\s+/g, ' ').slice(0, 42) || 'New chat';
     saveConversations();
     try {
-      const content = await runAgentTurn({ state: chat, userMessage: text, serverUrl: settings.serverUrl, model: settings.model, streamResponses: settings.streamResponses, allowGit: settings.allowGit, cwd: project.cwd, signal: controller.signal, onEvent: event => sender.send('chat:event', { ...event, chatId }) });
+      const content = await runAgentTurn({ state: chat, userMessage: text, serverUrl: settings.serverUrl, model: settings.model, streamResponses: settings.streamResponses, allowGit: settings.allowGit, cwd: project.cwd, signal: controller.signal, approveTool: (name, args) => approveTool(sender, chatId, project.cwd, name, args), onEvent: event => sender.send('chat:event', { ...event, chatId }) });
       chat.history.push({ role: 'agent', content }); saveConversations();
       return { ok: true, content, title: chat.title };
     } catch (err) {
@@ -177,7 +260,10 @@ app.whenReady().then(() => {
           : err.message;
       chat.history.push({ role: 'error', content: `Error: ${error}` }); saveConversations();
       return { ok: false, error, title: chat.title };
-    } finally { activeRequests.delete(sender.id); }
+    } finally {
+      cancelPendingApprovals(sender);
+      activeRequests.delete(sender.id);
+    }
   });
 
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

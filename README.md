@@ -70,10 +70,11 @@ gives a final text answer (capped at 25 steps per turn as a safety valve).
 
 ## Notes & things to tighten up later
 
-- **No confirmation prompts.** As requested, the agent has full autonomy —
-  it will run shell commands (including destructive ones) without asking.
-  If you want a safety net, the easiest addition is a per-command confirm
-  dialog in `tools.js`'s `run_shell` case.
+- **Approval prompts.** Reading files and listing directories happen
+  automatically. Writing or deleting files and running shell commands require
+  approval in an inline chat card before they execute; the card disappears
+  after a choice is made. File-write prompts can be permanently approved for
+  that exact file path; deletions and shell commands always require approval.
 - **Git is protected by default.** Enable **Allow Git modifications** in
   Settings to let the agent run Git commands and modify `.git` metadata.
 - **Model must support tool calling.** Qwen2.5-coder, Llama 3.1+, and Mistral
