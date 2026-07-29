@@ -282,7 +282,7 @@ app.whenReady().then(() => {
     saveConversations();
     try {
       const content = await runAgentTurn({ state: chat, userMessage: text, serverUrl: settings.serverUrl, model: settings.model, streamResponses: settings.streamResponses, allowGit: settings.allowGit, cwd: project.cwd, signal: controller.signal, approveTool: (name, args) => approveTool(sender, chatId, project.cwd, name, args), onEvent: event => sender.send('chat:event', { ...event, chatId }) });
-      chat.history.push({ role: 'agent', content }); saveConversations();
+      saveConversations();
       return { ok: true, content, title: chat.title };
     } catch (err) {
       const unsupportedTools = /does not support tools/i.test(err.message || '');

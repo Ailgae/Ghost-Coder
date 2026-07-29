@@ -1,7 +1,58 @@
 // Thin wrapper around Ollama's /api/chat endpoint with tool-calling support.
 // Docs: https://github.com/ollama/ollama/blob/main/docs/api.md#chat-request-with-tools
 
-async function chat({ serverUrl, model, messages, tools, stream = true, signal, onContent }) {
+function openAIMessage(message, index) {
+  const converted = { role: message.role, content: message.content ?? '' };
+  if (Array.isArray(message.tool_calls) && message.tool_calls.length) {
+    converted.tool_calls = message.tool_calls.map((call, callIndex) => ({
+      id: call.id || `call_${index}_${callIndex}`,
+      type: 'function',
+      function: {
+        name: call.function.name,
+        arguments: typeof call.function.arguments === 'string'
+          ? call.function.arguments
+          : JSON.stringify(call.function.arguments || {})
+      }
+    }));
+  }
+  if (message.role === 'tool') {
+    converted.tool_call_id = message.tool_call_id;
+  }
+  return converted;
+}
+
+async function chatWithRequiredTool({ serverUrl, model, messages, tools, signal }) {
+  const url = `${serverUrl.replace(/\/$/, '')}/v1/chat/completions`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      messages: messages.map(openAIMessage),
+      tools,
+      tool_choice: 'required',
+      stream: false,
+      temperature: 0.2
+    }),
+    signal
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Ollama could not require an editing tool (${res.status}): ${text || res.statusText}`);
+  }
+
+  const data = await res.json();
+  const message = data.choices?.[0]?.message;
+  if (!message) throw new Error('Ollama returned an empty required-tool response');
+  return message;
+}
+
+async function chat({ serverUrl, model, messages, tools, stream = true, requireTool = false, signal, onContent }) {
+  if (requireTool) {
+    return chatWithRequiredTool({ serverUrl, model, messages, tools, signal });
+  }
+
   const url = `${serverUrl.replace(/\/$/, '')}/api/chat`;
 
   const res = await fetch(url, {

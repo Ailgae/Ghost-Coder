@@ -150,6 +150,11 @@ function compactPreviousContext(messages) {
       message.content.startsWith('Continue implementing the original request:')
     ) return false;
     return true;
+  }).map(message => {
+    if (message.role === 'agent' || message.role === 'error') {
+      return { ...message, role: 'assistant' };
+    }
+    return message;
   });
 }
 
@@ -193,11 +198,16 @@ Guidelines:
 async function runAgentTurn({ state, userMessage, serverUrl, model, streamResponses = true, allowGit = false, cwd, onEvent, approveTool, signal }) {
   const changeRequired = requiresFileChange(userMessage);
   let changeRetries = 0;
+  let requireToolNext = false;
   let mutationDenied = false;
   const initialSnapshot = projectSnapshot(cwd);
   let lastSnapshot = initialSnapshot;
 
-  state.messages = compactPreviousContext(Array.isArray(state.messages) ? state.messages : []);
+  const previousMessages = Array.isArray(state.messages) ? state.messages : [];
+  if (previousMessages.at(-1)?.role === 'user' && previousMessages.at(-1)?.content === userMessage) {
+    previousMessages.pop();
+  }
+  state.messages = compactPreviousContext(previousMessages);
   const prompt = { role: 'system', content: systemPrompt(cwd, allowGit) };
   if (state.messages[0]?.role === 'system') state.messages[0] = prompt;
   else state.messages.unshift(prompt);
@@ -206,14 +216,19 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, streamRespon
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     if (signal && signal.aborted) throw new Error('Response stopped.');
+    const requireTool = requireToolNext;
+    requireToolNext = false;
     const message = await chat({
       serverUrl,
       model,
       messages: state.messages,
       tools: getToolDefinitions(allowGit),
-      stream: streamResponses,
+      stream: streamResponses && !requireTool,
+      requireTool,
       signal,
-      onContent: streamResponses ? content => onEvent({ type: 'content_delta', content }) : null
+      onContent: streamResponses && !requireTool
+        ? content => onEvent({ type: 'content_delta', content })
+        : null
     });
     state.messages.push(message);
 
@@ -270,11 +285,12 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, streamRespon
     if (changeRequired && !hasNetFileChanges && !mutationDenied) {
       if (changeRetries < MAX_CHANGE_RETRIES) {
         changeRetries++;
+        requireToolNext = true;
         state.messages.push({
           role: 'user',
-          content: `Continue implementing the original request: ${JSON.stringify(userMessage)}\n\nYou have not made a verified file change. Do not claim that anything was updated. Inspect the relevant files, use write_file or run_shell to implement this original request, then verify it before replying.`
+          content: `Continue implementing the original request: ${JSON.stringify(userMessage)}\n\nYou have not made a verified file change. Your next response is required to be a tool call. Inspect the relevant files first when necessary, then use write_file or run_shell to implement the request. Do not answer with prose until the requested change exists on disk.`
         });
-        onEvent({ type: 'note', content: 'No verified file change yet — asking the model to use the editing tools.' });
+        onEvent({ type: 'note', content: 'No verified file change yet — requiring the model to call a project tool.' });
         continue;
       }
 
