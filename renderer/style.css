@@ -211,6 +211,42 @@ html, body {
   color: var(--error);
 }
 
+.change-panel {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  width: min(620px, 90%);
+  overflow: hidden;
+  background: #222326;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 12px;
+}
+
+.change-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 11px;
+  background: #292a2e;
+  border-bottom: 1px solid var(--border);
+}
+
+.change-panel-header strong { color: var(--text); font: 600 12.5px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
+.change-panel-header > span, .change-stats { display: flex; gap: 9px; white-space: nowrap; }
+.change-added { color: #58c77b; }
+.change-removed { color: #ff6b6b; }
+.change-list { display: grid; }
+.change-row { display: grid; gap: 7px; padding: 9px 11px; }
+.change-row + .change-row { border-top: 1px solid #303136; }
+.change-meta { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-width: 0; }
+.change-path { overflow: hidden; color: #d8d9dd; text-overflow: ellipsis; white-space: nowrap; }
+.change-bar { display: flex; gap: 2px; height: 4px; overflow: hidden; border-radius: 999px; background: #35363a; }
+.change-bar span { min-width: 0; }
+.change-bar-added { background: #3ba55d; }
+.change-bar-removed { background: #d9534f; }
+
 .action {
   flex: 0 0 auto;
   align-self: flex-start;

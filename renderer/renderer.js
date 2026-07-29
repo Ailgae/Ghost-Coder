@@ -9,7 +9,80 @@ function setStatus(text) { statusEl.textContent = text; }
 function setServerStatus(text, state = 'checking') { serverStatusTextEl.textContent = text; connectionBtn.classList.toggle('connected', state === 'connected'); connectionBtn.classList.toggle('error', state === 'error'); }
 function setSending(value) { sending = value; sendBtn.hidden = value; stopBtn.hidden = !value; composerInput.disabled = value; }
 function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
-function addBubble(role, text) { if (!text?.trim()) return null; const element = document.createElement('div'); element.className = `bubble ${role}`; element.textContent = text; messagesEl.append(element); scrollToBottom(); return element; }
+function splitChangeSummary(text) {
+  if (typeof text !== 'string') return { content: text || '', changes: [] };
+  const marker = '\n\nFiles changed:\n';
+  const markerIndex = text.lastIndexOf(marker);
+  if (markerIndex === -1) return { content: text, changes: [] };
+  const lines = text.slice(markerIndex + marker.length).split('\n');
+  const changes = lines.map(line => {
+    const match = line.match(/^- (.+): \+(\d+) \/ -(\d+)$/);
+    return match ? { path: match[1], added: Number(match[2]), removed: Number(match[3]) } : null;
+  });
+  if (changes.some(change => !change)) return { content: text, changes: [] };
+  return { content: text.slice(0, markerIndex).trim(), changes };
+}
+function addChangePanel(changes, afterElement) {
+  if (!changes.length) return null;
+  const panel = document.createElement('section');
+  panel.className = 'change-panel';
+  panel.setAttribute('aria-label', 'Files changed');
+  const totalAdded = changes.reduce((sum, change) => sum + change.added, 0);
+  const totalRemoved = changes.reduce((sum, change) => sum + change.removed, 0);
+  const header = document.createElement('header');
+  header.className = 'change-panel-header';
+  const title = document.createElement('strong');
+  title.textContent = `${changes.length} file${changes.length === 1 ? '' : 's'} changed`;
+  const totals = document.createElement('span');
+  totals.innerHTML = `<span class="change-added">+${totalAdded}</span><span class="change-removed">−${totalRemoved}</span>`;
+  header.append(title, totals);
+  const list = document.createElement('div');
+  list.className = 'change-list';
+  changes.forEach(change => {
+    const row = document.createElement('div');
+    row.className = 'change-row';
+    const meta = document.createElement('div');
+    meta.className = 'change-meta';
+    const file = document.createElement('span');
+    file.className = 'change-path';
+    file.textContent = change.path;
+    file.title = change.path;
+    const stats = document.createElement('span');
+    stats.className = 'change-stats';
+    stats.innerHTML = `<span class="change-added">+${change.added}</span><span class="change-removed">−${change.removed}</span>`;
+    meta.append(file, stats);
+    const bar = document.createElement('div');
+    bar.className = 'change-bar';
+    const total = change.added + change.removed;
+    const added = document.createElement('span');
+    added.className = 'change-bar-added';
+    added.style.flexGrow = total ? change.added : 0;
+    const removed = document.createElement('span');
+    removed.className = 'change-bar-removed';
+    removed.style.flexGrow = total ? change.removed : 0;
+    bar.append(added, removed);
+    row.append(meta, bar);
+    list.append(row);
+  });
+  panel.append(header, list);
+  afterElement.after(panel);
+  return panel;
+}
+function renderFinalAgentContent(element, text) {
+  const { content, changes } = splitChangeSummary(text);
+  element.textContent = content;
+  addChangePanel(changes, element);
+  scrollToBottom();
+}
+function addBubble(role, text) {
+  if (!text?.trim()) return null;
+  const element = document.createElement('div');
+  element.className = `bubble ${role}`;
+  messagesEl.append(element);
+  if (role === 'agent') renderFinalAgentContent(element, text);
+  else { element.textContent = text; scrollToBottom(); }
+  return element;
+}
 function appendStreamedContent(content) { if (!streamingBubble) { streamingBubble = document.createElement('div'); streamingBubble.className = 'bubble agent'; messagesEl.append(streamingBubble); } streamingBubble.textContent += content; scrollToBottom(); }
 function discardStreamedContent() { if (streamingBubble) streamingBubble.remove(); streamingBubble = null; }
 function addAction(title, detail) { const element = document.createElement('details'); element.className = 'action'; element.innerHTML = '<summary></summary><pre></pre>'; element.querySelector('summary').textContent = title; element.querySelector('pre').textContent = detail; messagesEl.append(element); scrollToBottom(); }
@@ -73,6 +146,6 @@ modelEl.onchange = () => window.vibe.setSettings({ model: modelEl.value });
 stopBtn.onclick = async () => { if (sending) { stopBtn.disabled = true; setStatus('Stopping…'); await window.vibe.stopMessage(); } };
 composerInput.oninput = () => { composerInput.style.height = 'auto'; composerInput.style.height = `${Math.min(composerInput.scrollHeight, 160)}px`; };
 composerInput.onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); composerForm.requestSubmit(); } };
-composerForm.onsubmit = async event => { event.preventDefault(); const text = composerInput.value.trim(); if (sending || !text || !modelEl.value) return; if (!activeProjectId || !activeChatId) return setStatus('Add a project before sending a message.'); composerInput.value = ''; composerInput.style.height = 'auto'; streamingBubble = null; addBubble('user', text); setSending(true); setStatus('Working…'); const result = await window.vibe.sendMessage({ projectId: activeProjectId, chatId: activeChatId, text }); if (result.ok) { if (streamingBubble) streamingBubble.textContent = result.content; else addBubble('agent', result.content); chatTitleEl.textContent = result.title; } else addBubble('error', `Error: ${result.error}`); streamingBubble = null; setStatus(result.ok ? 'Ready' : 'Error'); setSending(false); stopBtn.disabled = false; await renderProjects(); };
+composerForm.onsubmit = async event => { event.preventDefault(); const text = composerInput.value.trim(); if (sending || !text || !modelEl.value) return; if (!activeProjectId || !activeChatId) return setStatus('Add a project before sending a message.'); composerInput.value = ''; composerInput.style.height = 'auto'; streamingBubble = null; addBubble('user', text); setSending(true); setStatus('Working…'); const result = await window.vibe.sendMessage({ projectId: activeProjectId, chatId: activeChatId, text }); if (result.ok) { if (streamingBubble) renderFinalAgentContent(streamingBubble, result.content); else addBubble('agent', result.content); chatTitleEl.textContent = result.title; } else addBubble('error', `Error: ${result.error}`); streamingBubble = null; setStatus(result.ok ? 'Ready' : 'Error'); setSending(false); stopBtn.disabled = false; await renderProjects(); };
 window.vibe.onEvent(event => { if (event.chatId !== activeChatId) return; if (event.type === 'content_delta') appendStreamedContent(event.content); else if (event.type === 'note') addBubble('agent', event.content); else if (event.type === 'thinking') addAction('Thinking', event.content); else if (event.type === 'tool_call') { discardStreamedContent(); addAction(describeToolCall(event.name, event.args), JSON.stringify(event.args, null, 2)); } else if (event.type === 'tool_result') addAction(`${event.result?.ok ? '✓' : '✗'} ${event.name} result`, JSON.stringify(event.result, null, 2)); });
 initialize().catch(error => setStatus(`Startup error: ${error.message}`));
