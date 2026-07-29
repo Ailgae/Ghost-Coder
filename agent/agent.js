@@ -118,7 +118,9 @@ function fileChangeSummary(before, after) {
 
     return {
       path: filePath,
-      ...counts
+      ...counts,
+      before: oldFile?.contents.toString('utf8') ?? null,
+      after: newFile?.contents.toString('utf8') ?? null
     };
   });
 }
@@ -129,7 +131,12 @@ function appendChangeSummary(text, changes) {
   const lines = changes.map(change =>
     `- ${change.path}: +${change.added} / -${change.removed}`
   );
-  return `${text.trim()}\n\nFiles changed:\n${lines.join('\n')}`;
+  const diffData = Buffer.from(JSON.stringify(changes.map(({ path: filePath, before, after }) => ({
+    path: filePath,
+    before,
+    after
+  }))), 'utf8').toString('base64');
+  return `${text.trim()}\n\nFiles changed:\n${lines.join('\n')}\n\nDiff data:\n${diffData}`;
 }
 
 function systemPrompt(cwd, allowGit) {

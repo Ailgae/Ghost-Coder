@@ -3,6 +3,7 @@ const serverUrlEl = $('serverUrl'), streamResponsesEl = $('streamResponses'), al
 const composerForm = $('composerForm'), composerInput = $('composerInput'), sendBtn = $('sendBtn'), stopBtn = $('stopBtn');
 const connectionBtn = $('connectionBtn'), settingsBtn = $('settingsBtn'), serverStatusTextEl = $('serverStatusText'), projectsListEl = $('projectsList'), chatTitleEl = $('chatTitle');
 const projectModal = $('projectModal'), projectForm = $('projectForm'), projectNameEl = $('projectName'), projectPathEl = $('projectPath');
+const diffModal = $('diffModal'), diffTitleEl = $('diffTitle'), diffStatsEl = $('diffStats'), diffContentEl = $('diffContent');
 let sending = false, projects = [], activeProjectId = null, activeChatId = null, editingProjectId = null, streamingBubble = null;
 
 function setStatus(text) { statusEl.textContent = text; }
@@ -19,17 +20,66 @@ function setSending(value) {
 function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
 function splitChangeSummary(text) {
   if (typeof text !== 'string') return { content: text || '', changes: [] };
+  const diffMarker = '\n\nDiff data:\n';
+  const diffMarkerIndex = text.lastIndexOf(diffMarker);
+  let diffs = [];
+  if (diffMarkerIndex !== -1) {
+    try {
+      const bytes = Uint8Array.from(atob(text.slice(diffMarkerIndex + diffMarker.length).trim()), character => character.charCodeAt(0));
+      diffs = JSON.parse(new TextDecoder().decode(bytes));
+      text = text.slice(0, diffMarkerIndex);
+    } catch { diffs = []; }
+  }
   const marker = '\n\nFiles changed:\n';
   const markerIndex = text.lastIndexOf(marker);
   if (markerIndex === -1) return { content: text, changes: [] };
   const lines = text.slice(markerIndex + marker.length).split('\n');
   const changes = lines.map(line => {
     const match = line.match(/^- (.+): \+(\d+) \/ -(\d+)$/);
-    return match ? { path: match[1], added: Number(match[2]), removed: Number(match[3]) } : null;
+    if (!match) return null;
+    const diff = diffs.find(item => item.path === match[1]);
+    return { path: match[1], added: Number(match[2]), removed: Number(match[3]), diff };
   });
   if (changes.some(change => !change)) return { content: text, changes: [] };
   return { content: text.slice(0, markerIndex).trim(), changes };
 }
+function diffRows(before, after) {
+  const left = before === null ? [] : before.split('\n');
+  const right = after === null ? [] : after.split('\n');
+  let start = 0;
+  while (start < left.length && start < right.length && left[start] === right[start]) start++;
+  let leftEnd = left.length - 1, rightEnd = right.length - 1;
+  while (leftEnd >= start && rightEnd >= start && left[leftEnd] === right[rightEnd]) { leftEnd--; rightEnd--; }
+  const rows = [];
+  for (let index = 0; index < start; index++) rows.push({ before: left[index], after: right[index], type: 'same' });
+  const changedLength = Math.max(leftEnd - start + 1, rightEnd - start + 1);
+  for (let index = 0; index < changedLength; index++) rows.push({ before: left[start + index], after: right[start + index], type: 'changed' });
+  const suffixLength = left.length - leftEnd - 1;
+  for (let index = 0; index < suffixLength; index++) rows.push({ before: left[leftEnd + 1 + index], after: right[rightEnd + 1 + index], type: 'same' });
+  return rows;
+}
+function openDiff(change) {
+  if (!change.diff) return;
+  diffTitleEl.textContent = change.path;
+  diffStatsEl.textContent = `+${change.added}  −${change.removed}`;
+  diffContentEl.replaceChildren();
+  let beforeLine = 0, afterLine = 0;
+  diffRows(change.diff.before, change.diff.after).forEach(row => {
+    const line = document.createElement('div');
+    line.className = `diff-line ${row.type}`;
+    const before = document.createElement('pre');
+    const after = document.createElement('pre');
+    before.dataset.line = row.before === undefined ? '' : String(++beforeLine);
+    after.dataset.line = row.after === undefined ? '' : String(++afterLine);
+    before.textContent = row.before ?? '';
+    after.textContent = row.after ?? '';
+    line.append(before, after);
+    diffContentEl.append(line);
+  });
+  diffModal.hidden = false;
+  $('closeDiffBtn').focus();
+}
+function closeDiff() { diffModal.hidden = true; }
 function addChangePanel(changes, afterElement) {
   if (!changes.length) return null;
   const panel = document.createElement('section');
@@ -47,8 +97,13 @@ function addChangePanel(changes, afterElement) {
   const list = document.createElement('div');
   list.className = 'change-list';
   changes.forEach(change => {
-    const row = document.createElement('div');
+    const row = document.createElement(change.diff ? 'button' : 'div');
     row.className = 'change-row';
+    if (change.diff) {
+      row.type = 'button';
+      row.title = `View diff for ${change.path}`;
+      row.onclick = () => openDiff(change);
+    }
     const meta = document.createElement('div');
     meta.className = 'change-meta';
     const file = document.createElement('span');
@@ -180,6 +235,9 @@ async function initialize() { setSending(false); const settings = await window.v
 $('addProjectBtn').onclick = () => openProjectModal();
 $('pickProjectDirBtn').onclick = async () => { const path = await window.vibe.pickDirectory(); if (path) { projectPathEl.value = path; if (!projectNameEl.value) projectNameEl.value = path.split('/').filter(Boolean).pop() || ''; } };
 $('cancelProjectBtn').onclick = closeProjectModal; projectModal.onclick = event => { if (event.target === projectModal) closeProjectModal(); };
+$('closeDiffBtn').onclick = closeDiff;
+diffModal.onclick = event => { if (event.target === diffModal) closeDiff(); };
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && !diffModal.hidden) closeDiff(); });
 $('removeProjectBtn').onclick = async () => { const project = projects.find(item => item.id === editingProjectId); if (!project || !window.confirm(`Remove “${project.name}” and its saved chats? Project files on disk will not be deleted.`)) return; try { const nextProjectId = await window.vibe.removeProject(project.id); projects = await window.vibe.listProjects(); closeProjectModal(); if (nextProjectId) await selectProject(nextProjectId); else { showNoProject(); await renderProjects(); } } catch (error) { setStatus(error.message); } };
 projectForm.onsubmit = async event => { event.preventDefault(); if (!projectPathEl.value) return setStatus('Choose a project directory'); const payload = { id: editingProjectId, name: projectNameEl.value, cwd: projectPathEl.value }; let projectId = editingProjectId; if (projectId) await window.vibe.updateProject(payload); else projectId = (await window.vibe.createProject(payload)).id; projects = await window.vibe.listProjects(); closeProjectModal(); await selectProject(projectId); };
 function openConnection() { $('connectionModal').hidden = false; serverUrlEl.focus(); }
