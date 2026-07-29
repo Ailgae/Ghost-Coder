@@ -74,7 +74,9 @@ gives a final text answer (capped at 25 steps per turn as a safety valve).
   automatically. Writing or deleting files and running shell commands require
   approval in an inline chat card before they execute; the card disappears
   after a choice is made. File-write prompts can be permanently approved for
-  that exact file path; deletions and shell commands always require approval.
+  that exact file path. Simple shell commands can be permanently approved by
+  executable type (for example, `npm`); compound commands using shell operators
+  always require one-time approval. Deletions always require approval.
 - **Git is protected by default.** Enable **Allow Git modifications** in
   Settings to let the agent run Git commands and modify `.git` metadata.
 - **Model must support tool calling.** Qwen2.5-coder, Llama 3.1+, and Mistral

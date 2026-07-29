@@ -100,9 +100,13 @@ function addApproval(event) {
   actions.className = 'approval-actions';
   const choices = [
     { value: 'deny', label: 'Deny', className: 'approval-deny' },
-    { value: 'allow', label: 'Allow once', className: 'approval-allow' }
+    { value: 'allow', label: 'Allow', className: 'approval-allow' }
   ];
-  if (event.canRemember) choices.push({ value: 'always', label: 'Always allow for this file', className: 'approval-always' });
+  if (event.rememberKind === 'file') {
+    choices.push({ value: 'always_file', label: 'Always allow for this file', className: 'approval-always' });
+  } else if (event.rememberKind === 'command_type') {
+    choices.push({ value: 'allow_type', label: `Allow this command type (${event.commandType})`, className: 'approval-always' });
+  }
   choices.forEach(choice => {
     const button = document.createElement('button');
     button.type = 'button';

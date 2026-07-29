@@ -133,12 +133,13 @@ function systemPrompt(cwd, allowGit) {
     : 'Never run Git commands, access or modify .git metadata, create commits or tags, change branches, or push to a remote. Repository management belongs exclusively to the user.';
   return `You are an autonomous coding agent running on the user's Mac, operating in the project directory: ${cwd}
 
-You have tools to read/write files, list directories, and run shell commands (npm, pip, tests, builds, etc). You have full autonomy to use them without asking for confirmation.
+You have tools to read/write files, list directories, and run shell commands (npm, pip, tests, builds, etc). File writes, deletions, and shell commands require the user's approval before they execute. Read-only tools run automatically.
 
 Guidelines:
 - Break down the user's request into concrete steps and carry them out using the tools, rather than just describing what should be done.
 - ${gitCapabilities}
 - Always invoke tools using the proper tool-calling mechanism. Never write raw JSON describing a tool call as plain text in your reply — if you want to call a tool, actually call it.
+- If the user denies a tool request, do not repeat the same request. Explain what was not completed or use a safe alternative.
 - For a request to change the project, you must inspect the relevant files and make the edit with write_file or run_shell before replying. A plan or explanation alone is not a completed change.
 - Prefer running relevant tests or build commands (e.g. "npm test") to verify changes.
 - When you write code, write complete, working files rather than snippets.
@@ -153,10 +154,11 @@ Guidelines:
  * onEvent also receives incremental `content_delta` events while Ollama
  * generates text, along with tool, thinking, note, and final events.
  */
-async function runAgentTurn({ state, userMessage, serverUrl, model, streamResponses = true, allowGit = false, cwd, onEvent, signal }) {
+async function runAgentTurn({ state, userMessage, serverUrl, model, streamResponses = true, allowGit = false, cwd, onEvent, approveTool, signal }) {
   const changeRequired = requiresFileChange(userMessage);
   let verifiedChanges = 0;
   let changeRetries = 0;
+  let mutationDenied = false;
   const initialSnapshot = projectSnapshot(cwd);
   let lastSnapshot = initialSnapshot;
 
@@ -201,7 +203,12 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, streamRespon
         const { name, arguments: args, id } = call;
         onEvent({ type: 'tool_call', name, args });
 
-        const result = await executeTool(name, args, cwd, { allowGit });
+        const approvalRequired = name === 'write_file' || name === 'delete_file' || name === 'run_shell';
+        const approved = !approvalRequired || (approveTool && await approveTool(name, args));
+        const result = approved
+          ? await executeTool(name, args, cwd, { allowGit })
+          : { ok: false, denied: true, error: 'The user denied this tool request.' };
+        if (result.denied) mutationDenied = true;
         const nextSnapshot = projectSnapshot(cwd);
         const changedFiles = changedPaths(lastSnapshot, nextSnapshot);
         if (changedFiles.length > 0) {
@@ -222,7 +229,7 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, streamRespon
 
     // A plain-text answer is not evidence that a requested edit happened.
     // Give the model a bounded opportunity to use the editing tool instead.
-    if (changeRequired && verifiedChanges === 0) {
+    if (changeRequired && verifiedChanges === 0 && !mutationDenied) {
       if (changeRetries < MAX_CHANGE_RETRIES) {
         changeRetries++;
         state.messages.push({

@@ -27,6 +27,9 @@ function loadSettings() {
     approvedWriteFiles: Array.isArray(saved.approvedWriteFiles)
       ? [...new Set(saved.approvedWriteFiles.filter(file => typeof file === 'string').map(file => path.resolve(file)))]
       : [],
+    approvedShellCommandTypes: Array.isArray(saved.approvedShellCommandTypes)
+      ? [...new Set(saved.approvedShellCommandTypes.filter(type => typeof type === 'string' && type.length > 0))]
+      : [],
     projects,
     activeProjectId: projects.some(project => project.id === saved.activeProjectId) ? saved.activeProjectId : (projects[0]?.id || null)
   };
@@ -96,13 +99,29 @@ function parseToolArgs(rawArgs) {
   try { return JSON.parse(rawArgs); } catch { return {}; }
 }
 
+function shellCommandType(command) {
+  if (typeof command !== 'string') return null;
+  const trimmed = command.trim();
+  // Compound shell syntax can hide unrelated commands, so it is never covered
+  // by a remembered command-type permission.
+  if (!trimmed || /[\n\r;&|<>`$()]/.test(trimmed)) return null;
+  const tokens = trimmed.match(/(?:[^\s"'\\]+|"(?:\\.|[^"])*"|'[^']*')+/g) || [];
+  const executable = tokens.find(token => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(token));
+  if (!executable || executable.startsWith('-')) return null;
+  return path.basename(executable.replace(/^['"]|['"]$/g, ''));
+}
+
 function approveTool(sender, chatId, cwd, name, rawArgs) {
   const args = parseToolArgs(rawArgs);
   const target = args.path
     ? path.resolve(cwd, args.path)
     : null;
+  const commandType = name === 'run_shell' ? shellCommandType(args.command) : null;
 
   if (name === 'write_file' && target && settings.approvedWriteFiles.includes(target)) {
+    return true;
+  }
+  if (name === 'run_shell' && commandType && settings.approvedShellCommandTypes.includes(commandType)) {
     return true;
   }
 
@@ -122,7 +141,11 @@ function approveTool(sender, chatId, cwd, name, rawArgs) {
   };
   const request = descriptions[name];
   if (!request) return true;
-  const canRemember = name === 'write_file' && Boolean(target);
+  const rememberKind = name === 'write_file' && target
+    ? 'file'
+    : name === 'run_shell' && commandType
+      ? 'command_type'
+      : null;
 
   return new Promise(resolve => {
     const approvalId = id();
@@ -130,7 +153,9 @@ function approveTool(sender, chatId, cwd, name, rawArgs) {
       senderId: sender.id,
       resolve,
       name,
-      target
+      target,
+      commandType,
+      rememberKind
     });
     sender.send('chat:event', {
       type: 'approval_request',
@@ -139,7 +164,8 @@ function approveTool(sender, chatId, cwd, name, rawArgs) {
       name,
       message: request.message,
       detail: request.detail,
-      canRemember
+      rememberKind,
+      commandType
     });
   });
 }
@@ -226,11 +252,18 @@ app.whenReady().then(() => {
     if (!approval || approval.senderId !== evt.sender.id) return false;
     pendingApprovals.delete(approvalId);
 
-    const rememberWrite = choice === 'always' && approval.name === 'write_file' && Boolean(approval.target);
-    const approved = choice === 'allow' || rememberWrite;
+    const rememberWrite = choice === 'always_file' && approval.rememberKind === 'file' && Boolean(approval.target);
+    const rememberCommandType = choice === 'allow_type' && approval.rememberKind === 'command_type' && Boolean(approval.commandType);
+    const approved = choice === 'allow' || rememberWrite || rememberCommandType;
     if (rememberWrite) {
       if (!settings.approvedWriteFiles.includes(approval.target)) {
         settings.approvedWriteFiles.push(approval.target);
+        saveSettings();
+      }
+    }
+    if (rememberCommandType) {
+      if (!settings.approvedShellCommandTypes.includes(approval.commandType)) {
+        settings.approvedShellCommandTypes.push(approval.commandType);
         saveSettings();
       }
     }
