@@ -103,7 +103,7 @@ function openDiff(change) {
   $('closeDiffBtn').focus();
 }
 function closeDiff() { diffModal.hidden = true; }
-function addChangePanel(changes, afterElement) {
+function addChangePanel(changes, afterElement, sourceContent) {
   if (!changes.length) return null;
   const panel = document.createElement('section');
   panel.className = 'change-panel';
@@ -114,18 +114,56 @@ function addChangePanel(changes, afterElement) {
   header.className = 'change-panel-header';
   const title = document.createElement('strong');
   title.textContent = `${changes.length} file${changes.length === 1 ? '' : 's'} changed`;
+  const headerActions = document.createElement('div');
+  headerActions.className = 'change-header-actions';
   const totals = document.createElement('span');
   totals.innerHTML = `<span class="change-added">+${totalAdded}</span><span class="change-removed">−${totalRemoved}</span>`;
-  header.append(title, totals);
+  const undoAll = document.createElement('button');
+  undoAll.type = 'button';
+  undoAll.className = 'change-undo';
+  undoAll.textContent = 'Undo all';
+  headerActions.append(totals, undoAll);
+  header.append(title, headerActions);
   const list = document.createElement('div');
   list.className = 'change-list';
+  const undo = async (selectedChanges, rows, button) => {
+    const buttons = panel.querySelectorAll('button');
+    buttons.forEach(item => { item.disabled = true; });
+    button.textContent = 'Undoing…';
+    const result = await window.vibe.undoChanges({
+      projectId: activeProjectId,
+      chatId: activeChatId,
+      sourceContent,
+      changes: selectedChanges.map(change => change.diff)
+    });
+    const successful = new Set((result.results || []).filter(item => item.ok).map(item => item.path));
+    rows.forEach((row, index) => {
+      if (successful.has(selectedChanges[index].path)) row.remove();
+    });
+    if (!list.children.length) panel.remove();
+    else {
+      title.textContent = `${list.children.length} file${list.children.length === 1 ? '' : 's'} changed`;
+      const remaining = rows.map((row, index) => ({ row, change: changes[index] })).filter(item => item.row.isConnected);
+      const remainingAdded = remaining.reduce((sum, item) => sum + item.change.added, 0);
+      const remainingRemoved = remaining.reduce((sum, item) => sum + item.change.removed, 0);
+      totals.innerHTML = `<span class="change-added">+${remainingAdded}</span><span class="change-removed">−${remainingRemoved}</span>`;
+      buttons.forEach(item => { item.disabled = false; });
+      undoAll.textContent = 'Undo all';
+    }
+    const failure = (result.results || []).find(item => !item.ok);
+    setStatus(failure ? `Undo failed for ${failure.path}: ${failure.error}` : 'Changes undone');
+  };
+  const rows = [];
   changes.forEach(change => {
-    const row = document.createElement(change.diff ? 'button' : 'div');
+    const row = document.createElement('div');
     row.className = 'change-row';
+    rows.push(row);
+    const body = document.createElement(change.diff ? 'button' : 'div');
+    body.className = 'change-row-body';
     if (change.diff) {
-      row.type = 'button';
-      row.title = `View diff for ${change.path}`;
-      row.onclick = () => openDiff(change);
+      body.type = 'button';
+      body.title = `View diff for ${change.path}`;
+      body.onclick = () => openDiff(change);
     }
     const meta = document.createElement('div');
     meta.className = 'change-meta';
@@ -147,9 +185,24 @@ function addChangePanel(changes, afterElement) {
     removed.className = 'change-bar-removed';
     removed.style.flexGrow = total ? change.removed : 0;
     bar.append(added, removed);
-    row.append(meta, bar);
+    body.append(meta, bar);
+    row.append(body);
+    if (change.diff) {
+      const undoButton = document.createElement('button');
+      undoButton.type = 'button';
+      undoButton.className = 'change-undo change-undo-file';
+      undoButton.textContent = 'Undo';
+      undoButton.title = `Undo changes to ${change.path}`;
+      undoButton.onclick = () => undo([change], [row], undoButton);
+      row.append(undoButton);
+    }
     list.append(row);
   });
+  undoAll.onclick = () => {
+    const undoable = changes.map((change, index) => ({ change, row: rows[index] }))
+      .filter(item => item.change.diff && item.row.isConnected);
+    undo(undoable.map(item => item.change), undoable.map(item => item.row), undoAll);
+  };
   panel.append(header, list);
   afterElement.after(panel);
   return panel;
@@ -273,7 +326,7 @@ function renderFinalAgentContent(element, text) {
   const { content, changes } = splitChangeSummary(text);
   element.classList.add('markdown');
   renderMarkdown(element, content);
-  addChangePanel(changes, element);
+  addChangePanel(changes, element, text);
   scrollToBottom();
 }
 function addBubble(role, text) {

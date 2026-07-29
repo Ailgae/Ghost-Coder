@@ -276,14 +276,19 @@ html, body {
 }
 
 .change-panel-header strong { color: var(--text); font: 600 12.5px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
-.change-panel-header > span, .change-stats { display: flex; gap: 9px; white-space: nowrap; }
+.change-header-actions, .change-header-actions > span, .change-stats { display: flex; align-items: center; gap: 9px; white-space: nowrap; }
 .change-added { color: #58c77b; }
 .change-removed { color: #ff6b6b; }
 .change-list { display: grid; }
-.change-row { display: grid; width: 100%; gap: 7px; padding: 9px 11px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
-.change-row:is(button) { cursor: pointer; }
-.change-row:is(button):hover, .change-row:is(button):focus-visible { background: #303136; outline: none; }
+.change-row { display: flex; align-items: center; width: 100%; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.change-row-body { display: grid; flex: 1; min-width: 0; gap: 7px; padding: 9px 11px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.change-row-body:is(button) { cursor: pointer; }
+.change-row-body:is(button):hover, .change-row-body:is(button):focus-visible { background: #303136; outline: none; }
 .change-row + .change-row { border-top: 1px solid #303136; }
+.change-undo { padding: 4px 8px; border: 1px solid #4a4c52; border-radius: 6px; background: #34353a; color: #d8d9dd; cursor: pointer; font: 600 11px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
+.change-undo:hover, .change-undo:focus-visible { border-color: #747780; background: #414349; outline: none; }
+.change-undo:disabled { cursor: wait; opacity: 0.65; }
+.change-undo-file { flex: 0 0 auto; margin-right: 10px; }
 .change-meta { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-width: 0; }
 .change-path { overflow: hidden; color: #d8d9dd; text-overflow: ellipsis; white-space: nowrap; }
 .change-bar { display: flex; gap: 2px; height: 4px; overflow: hidden; border-radius: 999px; background: #35363a; }

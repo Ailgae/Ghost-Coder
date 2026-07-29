@@ -84,6 +84,67 @@ function chatSummary(chat) {
   return { id: chat.id, title: chat.title, createdAt: chat.createdAt };
 }
 
+function changeSummaryParts(content) {
+  if (typeof content !== 'string') return null;
+  const diffMarker = '\n\nDiff data:\n';
+  const diffIndex = content.lastIndexOf(diffMarker);
+  if (diffIndex === -1) return null;
+  try {
+    const changes = JSON.parse(Buffer.from(content.slice(diffIndex + diffMarker.length).trim(), 'base64').toString('utf8'));
+    const filesIndex = content.lastIndexOf('\n\nFiles changed:\n', diffIndex);
+    if (filesIndex === -1 || !Array.isArray(changes)) return null;
+    return { text: content.slice(0, filesIndex).trim(), changes };
+  } catch {
+    return null;
+  }
+}
+
+function contentWithoutChanges(content, undonePaths) {
+  const parsed = changeSummaryParts(content);
+  if (!parsed) return content;
+  const remaining = parsed.changes.filter(change => !undonePaths.has(change.path));
+  if (!remaining.length) return parsed.text;
+  const lines = remaining.map(change => {
+    const counts = require('./agent/agentHelpers').changedLineCounts(
+      change.before == null ? undefined : Buffer.from(change.before),
+      change.after == null ? undefined : Buffer.from(change.after)
+    );
+    return `- ${change.path}: +${counts.added} / -${counts.removed}`;
+  });
+  const encoded = Buffer.from(JSON.stringify(remaining), 'utf8').toString('base64');
+  return `${parsed.text}\n\nFiles changed:\n${lines.join('\n')}\n\nDiff data:\n${encoded}`;
+}
+
+function restoreChange(project, change) {
+  if (!change || typeof change.path !== 'string') return { ok: false, path: change?.path, error: 'Invalid change data.' };
+  const root = path.resolve(project.cwd);
+  const target = path.resolve(root, change.path);
+  const relative = path.relative(root, target);
+  if (!relative || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    return { ok: false, path: change.path, error: 'The file is outside the project.' };
+  }
+
+  let current = null;
+  try { current = fs.readFileSync(target, 'utf8'); } catch (error) {
+    if (error.code !== 'ENOENT') return { ok: false, path: change.path, error: error.message };
+  }
+  if (current !== change.after) {
+    return { ok: false, path: change.path, error: 'The file changed again after this edit, so it was not overwritten.' };
+  }
+
+  try {
+    if (change.before === null) {
+      fs.unlinkSync(target);
+    } else {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, change.before, 'utf8');
+    }
+    return { ok: true, path: change.path };
+  } catch (error) {
+    return { ok: false, path: change.path, error: error.message };
+  }
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 900, height: 700, minWidth: 480, minHeight: 400,
@@ -269,6 +330,24 @@ app.whenReady().then(() => {
     }
     approval.resolve(approved);
     return true;
+  });
+  ipcMain.handle('chat:undo-changes', (_evt, { projectId, chatId, sourceContent, changes }) => {
+    const project = projectById(projectId);
+    const chat = chatById(projectId, chatId);
+    if (!project || !chat) return { ok: false, error: 'Project or chat no longer exists.', results: [] };
+    if (!Array.isArray(changes) || !changes.length) return { ok: false, error: 'No changes were selected.', results: [] };
+
+    const results = changes.map(change => restoreChange(project, change));
+    const undonePaths = new Set(results.filter(result => result.ok).map(result => result.path));
+    if (undonePaths.size) {
+      for (let index = chat.history.length - 1; index >= 0; index--) {
+        if (chat.history[index].content !== sourceContent) continue;
+        chat.history[index].content = contentWithoutChanges(chat.history[index].content, undonePaths);
+        break;
+      }
+      saveConversations();
+    }
+    return { ok: results.every(result => result.ok), results };
   });
   ipcMain.handle('chat:send', async (evt, { projectId, chatId, text }) => {
     const sender = evt.sender;
