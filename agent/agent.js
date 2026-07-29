@@ -218,11 +218,15 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, streamRespon
     if (signal && signal.aborted) throw new Error('Response stopped.');
     const requireTool = requireToolNext;
     requireToolNext = false;
+    const availableTools = getToolDefinitions(allowGit);
+    const tools = requireTool && changeRetries >= MAX_CHANGE_RETRIES
+      ? availableTools.filter(tool => ['write_file', 'run_shell', 'delete_file'].includes(tool.function.name))
+      : availableTools;
     const message = await chat({
       serverUrl,
       model,
       messages: state.messages,
-      tools: getToolDefinitions(allowGit),
+      tools,
       stream: streamResponses && !requireTool,
       requireTool,
       signal,
@@ -288,7 +292,9 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, streamRespon
         requireToolNext = true;
         state.messages.push({
           role: 'user',
-          content: `Continue implementing the original request: ${JSON.stringify(userMessage)}\n\nYou have not made a verified file change. Your next response is required to be a tool call. Inspect the relevant files first when necessary, then use write_file or run_shell to implement the request. Do not answer with prose until the requested change exists on disk.`
+          content: changeRetries >= MAX_CHANGE_RETRIES
+            ? `Finish implementing the original request: ${JSON.stringify(userMessage)}\n\nYou already had opportunities to inspect the project. Your next response must modify the project with write_file, run_shell, or delete_file. Read-only tools are no longer available. Do not answer with prose and do not repeat another inspection.`
+            : `Continue implementing the original request: ${JSON.stringify(userMessage)}\n\nYou have not made a verified file change. Your next response is required to be a tool call. Inspect the relevant files first when necessary, then use write_file or run_shell to implement the request. Do not answer with prose until the requested change exists on disk.`
         });
         onEvent({ type: 'note', content: 'No verified file change yet — requiring the model to call a project tool.' });
         continue;
