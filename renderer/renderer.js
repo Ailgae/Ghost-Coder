@@ -5,6 +5,7 @@ const connectionBtn = $('connectionBtn'), settingsBtn = $('settingsBtn'), server
 const projectModal = $('projectModal'), projectForm = $('projectForm'), projectNameEl = $('projectName'), projectPathEl = $('projectPath');
 const diffModal = $('diffModal'), diffTitleEl = $('diffTitle'), diffStatsEl = $('diffStats'), diffContentEl = $('diffContent');
 let sending = false, projects = [], activeProjectId = null, activeChatId = null, editingProjectId = null, streamingBubble = null;
+let composerHistory = [], composerHistoryIndex = 0, composerDraft = '';
 
 function setStatus(text) { statusEl.textContent = text; }
 function setServerStatus(text, state = 'checking') { serverStatusTextEl.textContent = text; connectionBtn.classList.toggle('connected', state === 'connected'); connectionBtn.classList.toggle('error', state === 'error'); }
@@ -346,13 +347,13 @@ async function renderProjects() {
 }
 async function selectProject(projectId) { if (sending) return; activeProjectId = projectId; await window.vibe.selectProject(projectId); const chats = await window.vibe.listChats(projectId); await selectChat(chats[0]?.id, false); await renderProjects(); }
 async function openChat(projectId, chatId) { if (sending) return; if (projectId !== activeProjectId) { activeProjectId = projectId; await window.vibe.selectProject(projectId); } await selectChat(chatId); }
-async function selectChat(chatId, repaint = true) { if (!chatId) return; activeChatId = chatId; const chat = await window.vibe.getChat(activeProjectId, chatId); messagesEl.replaceChildren(); chat.history.forEach(item => addBubble(item.role, item.content)); const chats = await window.vibe.listChats(activeProjectId); chatTitleEl.textContent = chats.find(item => item.id === chatId)?.title || 'New chat'; if (repaint) await renderProjects(); }
+async function selectChat(chatId, repaint = true) { if (!chatId) return; activeChatId = chatId; const chat = await window.vibe.getChat(activeProjectId, chatId); messagesEl.replaceChildren(); chat.history.forEach(item => addBubble(item.role, item.content)); composerHistory = chat.history.filter(item => item.role === 'user' && item.content?.trim()).map(item => item.content); composerHistoryIndex = composerHistory.length; composerDraft = ''; composerInput.replaceChildren(); const chats = await window.vibe.listChats(activeProjectId); chatTitleEl.textContent = chats.find(item => item.id === chatId)?.title || 'New chat'; if (repaint) await renderProjects(); }
 async function newChat(projectId) { if (sending) return; if (projectId !== activeProjectId) { activeProjectId = projectId; await window.vibe.selectProject(projectId); } const chat = await window.vibe.newChat(projectId); await selectChat(chat.id); setStatus('New chat started'); }
 async function removeChat(projectId, chatId) { if (sending) return; const replacement = await window.vibe.removeChat(projectId, chatId); if (projectId === activeProjectId && chatId === activeChatId) await selectChat(replacement.id, false); await renderProjects(); }
 
 function openProjectModal(project) { editingProjectId = project?.id || null; $('projectModalTitle').textContent = project ? 'Edit project' : 'Add project'; projectNameEl.value = project?.name || ''; projectPathEl.value = project?.cwd || ''; $('removeProjectBtn').hidden = !project; projectModal.hidden = false; projectNameEl.focus(); }
 function closeProjectModal() { projectModal.hidden = true; }
-function showNoProject() { activeProjectId = null; activeChatId = null; messagesEl.replaceChildren(); chatTitleEl.textContent = 'No project selected'; setStatus('No projects. Add a project to start.'); }
+function showNoProject() { activeProjectId = null; activeChatId = null; composerHistory = []; composerHistoryIndex = 0; composerDraft = ''; composerInput.replaceChildren(); messagesEl.replaceChildren(); chatTitleEl.textContent = 'No project selected'; setStatus('No projects. Add a project to start.'); }
 async function initialize() { setSending(false); const settings = await window.vibe.getSettings(); serverUrlEl.value = settings.serverUrl || ''; streamResponsesEl.checked = settings.streamResponses !== false; allowGitEl.checked = settings.allowGit === true; projects = await window.vibe.listProjects(); activeProjectId = settings.activeProjectId || projects[0]?.id || null; if (activeProjectId) { const chats = await window.vibe.listChats(activeProjectId); await selectChat(chats[0]?.id, false); } else showNoProject(); await renderProjects(); refreshModelList(settings.model || ''); }
 
 $('addProjectBtn').onclick = () => openProjectModal();
@@ -441,7 +442,29 @@ function formatComposer() {
   renderMarkdown(composerInput, source);
   placeCaretAtEnd(composerInput);
 }
+function setComposerMarkdown(source) {
+  clearTimeout(composerFormatTimer);
+  if (!source) composerInput.replaceChildren();
+  else renderMarkdown(composerInput, source);
+  placeCaretAtEnd(composerInput);
+}
+function navigateComposerHistory(direction) {
+  if (!composerHistory.length) return false;
+  if (direction < 0) {
+    if (composerHistoryIndex === composerHistory.length) composerDraft = composerMarkdown();
+    if (composerHistoryIndex === 0) return true;
+    composerHistoryIndex--;
+    setComposerMarkdown(composerHistory[composerHistoryIndex]);
+    return true;
+  }
+  if (composerHistoryIndex >= composerHistory.length) return true;
+  composerHistoryIndex++;
+  setComposerMarkdown(composerHistoryIndex === composerHistory.length ? composerDraft : composerHistory[composerHistoryIndex]);
+  return true;
+}
 composerInput.oninput = event => {
+  composerHistoryIndex = composerHistory.length;
+  composerDraft = composerMarkdown();
   clearTimeout(composerFormatTimer);
   // Do not re-render an opening backtick. Transform only a completed inline
   // code pair or a line containing exactly three backticks.
@@ -454,6 +477,12 @@ composerInput.oninput = event => {
   composerFormatTimer = setTimeout(formatComposer, 350);
 };
 composerInput.onkeydown = event => {
+  if (!event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
+      && (event.key === 'ArrowUp' || event.key === 'ArrowDown')
+      && navigateComposerHistory(event.key === 'ArrowUp' ? -1 : 1)) {
+    event.preventDefault();
+    return;
+  }
   const selection = window.getSelection();
   const anchor = selection?.anchorNode;
   const anchorElement = anchor?.nodeType === Node.ELEMENT_NODE ? anchor : anchor?.parentElement;
@@ -481,7 +510,7 @@ composerInput.onkeydown = event => {
     composerForm.requestSubmit();
   }
 };
-composerForm.onsubmit = async event => { event.preventDefault(); clearTimeout(composerFormatTimer); const text = composerMarkdown().trim(); if (sending || !text || !modelEl.value) return; if (!activeProjectId || !activeChatId) return setStatus('Add a project before sending a message.'); composerInput.replaceChildren(); streamingBubble = null; addBubble('user', text); setSending(true); setStatus('Working…'); const result = await window.vibe.sendMessage({ projectId: activeProjectId, chatId: activeChatId, text }); if (result.ok) { if (streamingBubble) renderFinalAgentContent(streamingBubble, result.content); else addBubble('agent', result.content); chatTitleEl.textContent = result.title; } else addBubble('error', `Error: ${result.error}`); streamingBubble = null; setStatus(result.ok ? 'Ready' : 'Error'); setSending(false); stopBtn.disabled = false; await renderProjects(); };
+composerForm.onsubmit = async event => { event.preventDefault(); clearTimeout(composerFormatTimer); const text = composerMarkdown().trim(); if (sending || !text || !modelEl.value) return; if (!activeProjectId || !activeChatId) return setStatus('Add a project before sending a message.'); composerHistory.push(text); composerHistoryIndex = composerHistory.length; composerDraft = ''; composerInput.replaceChildren(); streamingBubble = null; addBubble('user', text); setSending(true); setStatus('Working…'); const result = await window.vibe.sendMessage({ projectId: activeProjectId, chatId: activeChatId, text }); if (result.ok) { if (streamingBubble) renderFinalAgentContent(streamingBubble, result.content); else addBubble('agent', result.content); chatTitleEl.textContent = result.title; } else addBubble('error', `Error: ${result.error}`); streamingBubble = null; setStatus(result.ok ? 'Ready' : 'Error'); setSending(false); stopBtn.disabled = false; await renderProjects(); };
 window.vibe.onEvent(event => {
   if (event.type === 'approval_cancelled') return removeApproval(event.approvalId);
   if (event.chatId !== activeChatId) return;
