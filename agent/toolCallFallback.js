@@ -28,25 +28,82 @@ function findBalancedJsonBlocks(str) {
 }
 
 function extractFallbackToolCalls(content) {
-  if (!content || typeof content !== 'string' || !content.includes('{')) return [];
+  if (!content || typeof content !== 'string') return [];
 
   const calls = [];
-  for (const block of findBalancedJsonBlocks(content)) {
-    let parsed;
-    try {
-      parsed = JSON.parse(block);
-    } catch {
+  if (content.includes('{')) {
+    for (const block of findBalancedJsonBlocks(content)) {
+      let parsed;
+      try {
+        parsed = JSON.parse(block);
+      } catch {
+        continue;
+      }
+
+      // Accept either {"name": "...", "arguments": {...}}
+      // or the OpenAI-style {"function": {"name": "...", "arguments": {...}}}
+      const candidate = parsed.function || parsed;
+      if (candidate && typeof candidate.name === 'string' && candidate.arguments !== undefined) {
+        calls.push({ name: candidate.name, arguments: candidate.arguments });
+      }
+    }
+  }
+
+  if (calls.length > 0) return calls;
+
+  // Some Qwen/Ollama template combinations emit concise command-like lines
+  // instead of structured tool_calls, for example:
+  //   run_shell git status
+  //   read_file package.json
+  //   write_file README.md "# Ghost Coder"
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    let match = line.match(/^(read_file|list_dir|delete_file)\s+(.+)$/);
+    if (match) {
+      calls.push({ name: match[1], arguments: { path: unquote(match[2].trim()) } });
       continue;
     }
 
-    // Accept either {"name": "...", "arguments": {...}}
-    // or the OpenAI-style {"function": {"name": "...", "arguments": {...}}}
-    const candidate = parsed.function || parsed;
-    if (candidate && typeof candidate.name === 'string' && candidate.arguments !== undefined) {
-      calls.push({ name: candidate.name, arguments: candidate.arguments });
+    match = line.match(/^run_shell\s+(.+)$/);
+    if (match) {
+      calls.push({ name: 'run_shell', arguments: { command: unquote(match[1].trim()) } });
+      continue;
+    }
+
+    match = line.match(/^write_file\s+(\S+)\s+([\s\S]+)$/);
+    if (match) {
+      calls.push({
+        name: 'write_file',
+        arguments: {
+          path: unquote(match[1]),
+          content: parseInlineContent(match[2].trim())
+        }
+      });
     }
   }
+
   return calls;
+}
+
+function unquote(value) {
+  if (value.length >= 2) {
+    const first = value[0];
+    const last = value[value.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      if (first === '"') {
+        try { return JSON.parse(value); } catch { /* use inner text */ }
+      }
+      return value.slice(1, -1);
+    }
+  }
+  return value;
+}
+
+function parseInlineContent(value) {
+  if (value.startsWith('"')) {
+    try { return JSON.parse(value); } catch { /* preserve malformed text */ }
+  }
+  return value;
 }
 
 module.exports = { extractFallbackToolCalls };
