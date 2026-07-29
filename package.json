@@ -16,6 +16,11 @@
     "electron-builder": "^26.15.3",
     "mocha": "^11.7.6"
   },
+  "overrides": {
+    "brace-expansion": "^5.0.8",
+    "diff": "^8.0.3",
+    "serialize-javascript": "^7.0.5"
+  },
   "build": {
     "appId": "com.example.ghostcoder",
     "productName": "GhostCoder",
@@ -23,16 +28,21 @@
       "output": "dist/"
     },
     "files": [
-      "**/*"
+      "agent/**/*",
+      "assets/**/*",
+      "renderer/**/*",
+      "main.js",
+      "preload.js",
+      "package.json"
     ],
     "mac": {
-      "icon": "assets/ghost-coder-icon.png"
+      "icon": "assets/icon.png"
     },
     "win": {
-      "icon": "assets/ghost-coder-icon.png"
+      "icon": "assets/icon.png"
     },
     "linux": {
-      "icon": "assets/ghost-coder-icon.png"
+      "icon": "assets/icon.png"
     }
   }
 }
