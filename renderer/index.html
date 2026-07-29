@@ -13,7 +13,6 @@
       <div id="projectsList" class="projects-list"></div>
       <!-- Removed the New chat button -->
       <div class="sidebar-footer">
-        <button id="settingsBtn" class="settings-btn" type="button" title="Settings" aria-label="Open settings"><span aria-hidden="true">⚙</span></button>
         <button id="connectionBtn" class="connection-btn server-status-btn" type="button" title="Configure server endpoint"><span class="status-dot" aria-hidden="true"></span><span id="serverStatusText">Checking server…</span></button>
       </div>
     </aside>
@@ -24,7 +23,10 @@
       <form id="composerForm" class="composer">
         <textarea id="composerInput" placeholder="Tell the agent what to build or fix…" rows="1"></textarea>
         <div class="composer-footer">
-          <label class="model-picker" for="model"><span>Model</span><select id="model" disabled><option value="">Loading models...</option></select></label>
+          <div class="composer-tools">
+            <button id="settingsBtn" class="settings-btn" type="button" title="Settings" aria-label="Open settings"><span aria-hidden="true">⚙</span></button>
+            <label class="model-picker" for="model"><span>Model</span><select id="model" disabled><option value="">Loading models...</option></select></label>
+          </div>
           <div class="composer-actions">
             <button id="stopBtn" type="button" class="stop-btn" title="Stop" aria-label="Stop" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/></svg></button>
             <button id="sendBtn" class="send-btn" type="submit" title="Send" aria-label="Send"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 9-18 9 3-9-3-9Zm4.5 8v2h8v-2h-8Z"/></svg></button>
