@@ -1,26 +1,25 @@
 # Ghost coder
 
-A tiny native-feeling Mac chat app that talks to a remote Ollama server and acts
+**A vibe coder that's vibe coded!**
+
+A tiny native-feeling chat app that talks to a remote Ollama server and acts
 as a coding agent: it can read/write files, run shell commands (git, npm,
 tests, builds — anything), and loop on tool calls until the task is done.
 
 ## 1. Requirements
-
-- macOS
 - [Node.js](https://nodejs.org) 18+ (for the built-in `fetch` used to call Ollama)
-- Your Ollama server reachable at `<YOUR_OLLAMA_SERVER_ADDRESS>:<PORT>` (or wherever you point it),
+- Ollama running locally at `http://localhost:11434`,
   with a tool-calling-capable model pulled, e.g.:
 
   ```bash
-  # on the server (<YOUR_OLLAMA_SERVER_ADDRESS>)
+  # on the local machine
   ollama pull qwen2.5-coder
   ```
 
-  Make sure Ollama is listening on the network, not just localhost. On the
-  server, set before starting it:
+  To make Ollama listen on all network interfaces, run:
 
   ```bash
-  export OLLAMA_HOST=0.0.0.0:<PORT>
+  export OLLAMA_HOST=0.0.0.0
   ollama serve
   ```
 
@@ -32,28 +31,32 @@ npm install
 npm start
 ```
 
-The app opens with a sidebar where you can set:
-- **Ollama server** — defaults to `http://<YOUR_OLLAMA_SERVER_ADDRESS>:<PORT>`
-- **Model** — shows the models currently available on the configured Ollama server
-- **Project directory** — the folder the agent reads/writes/runs commands in. Pick this before you start chatting.
+The sidebar lists your projects and their saved chats. Click **+** beside
+**Projects** to add a project and choose the directory the agent can work in.
+Use the **+** beside a project to start another chat or **⋯** to edit the
+project.
+
+The model selector is below the message box. The server-status button at the
+bottom of the sidebar shows the connection state; click it to change the
+Ollama endpoint, which defaults to `http://localhost:11434`.
 
 Type what you want built or fixed in the chat box. The agent will show each
 tool call it makes (reading files, writing files, running shell commands) as
 a collapsible line above its reply — click to expand and see arguments/output.
+Responses appear progressively as Ollama generates them.
 
-## 3. Build a real .app you can double-click
+## 3. Build a distributable package
 
 ```bash
 npm run dist
 ```
 
-This uses `electron-builder` to produce a `.dmg`/`.app` under `dist/`. Drag it
-to Applications like any other Mac app.
+This uses `electron-builder` to produce the packaged application under `dist/`.
 
 ## How it works
 
 - `main.js` — Electron main process: window, settings persistence, IPC.
-- `agent/ollamaClient.js` — calls Ollama's `/api/chat` with `tools` attached.
+- The Ollama client module calls `/api/chat` with `tools` attached.
 - `agent/tools.js` — implements `read_file`, `write_file`, `list_dir`, `run_shell`.
 - `agent/agent.js` — the loop: send messages → if the model asks for tool
   calls, run them locally and feed results back → repeat until the model
@@ -66,9 +69,6 @@ to Applications like any other Mac app.
   it will run shell commands (including destructive ones) without asking.
   If you want a safety net, the easiest addition is a per-command confirm
   dialog in `tools.js`'s `run_shell` case.
-- **Non-streaming.** Replies come back all at once rather than token-by-token.
-  Ollama supports streaming (`stream: true` + reading the response body as
-  newline-delimited JSON) if you want a more "live typing" feel later.
 - **Single conversation.** The current conversation and agent context persist
   across app restarts. Use "New chat" to clear the saved conversation.
 - **Model must support tool calling.** Qwen2.5-coder, Llama 3.1+, and Mistral
