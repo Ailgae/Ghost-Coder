@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Electron build output
+dist/
+out/
+release/
+
+# Logs and runtime files
+*.log
+logs/
+pids/
+*.pid
+
+# Local environment and editor settings
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
