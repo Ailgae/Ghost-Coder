@@ -1,11 +1,36 @@
 {
-  "name": "GhostCoder",
+  "name": "ghost-coder",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "main.js",
   "scripts": {
-    "test": "echo \"No tests yet\""
+    "start": "electron .",
+    "build": "electron-builder build --dir",
+    "dist": "electron-builder build"
   },
   "author": "Eugene",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.example.ghostcoder",
+    "productName": "GhostCoder",
+    "directories": {
+      "output": "dist/"
+    },
+    "files": [
+      "**/*"
+    ],
+    "mac": {
+      "icon": "assets/ghost-coder-icon.png"
+    },
+    "win": {
+      "icon": "assets/ghost-coder-icon.png"
+    },
+    "linux": {
+      "icon": "assets/ghost-coder-icon.png"
+    }
+  }
 }
