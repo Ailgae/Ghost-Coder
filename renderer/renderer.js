@@ -12,8 +12,8 @@ function setSending(value) {
   sending = value;
   sendBtn.hidden = value;
   stopBtn.hidden = !value;
-  composerInput.disabled = value;
-  composerInput.placeholder = value ? 'Agent is working…' : 'Tell the agent what to build or fix…';
+  composerInput.contentEditable = String(!value);
+  composerInput.dataset.placeholder = value ? 'Agent is working…' : 'Tell the agent what to build or fix…';
   composerForm.classList.toggle('is-disabled', value);
   composerForm.setAttribute('aria-busy', String(value));
 }
@@ -131,9 +131,125 @@ function addChangePanel(changes, afterElement) {
   afterElement.after(panel);
   return panel;
 }
+
+function appendInlineMarkdown(parent, source) {
+  const pattern = /(`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|\*[^*\n]+\*|_[^_\n]+_|\[[^\]\n]+\]\((?:https?:\/\/|mailto:)[^)\s]+\))/g;
+  let cursor = 0;
+  for (const match of source.matchAll(pattern)) {
+    parent.append(document.createTextNode(source.slice(cursor, match.index)));
+    const token = match[0];
+    let element;
+    if (token.startsWith('`')) {
+      element = document.createElement('code');
+      element.textContent = token.slice(1, -1);
+    } else if (token.startsWith('**') || token.startsWith('__')) {
+      element = document.createElement('strong');
+      appendInlineMarkdown(element, token.slice(2, -2));
+    } else if (token.startsWith('~~')) {
+      element = document.createElement('del');
+      appendInlineMarkdown(element, token.slice(2, -2));
+    } else if (token.startsWith('[')) {
+      const parts = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      element = document.createElement('a');
+      element.textContent = parts[1];
+      element.href = parts[2];
+      element.target = '_blank';
+      element.rel = 'noreferrer noopener';
+    } else {
+      element = document.createElement('em');
+      appendInlineMarkdown(element, token.slice(1, -1));
+    }
+    parent.append(element);
+    cursor = match.index + token.length;
+  }
+  parent.append(document.createTextNode(source.slice(cursor)));
+}
+
+function renderMarkdown(element, markdown) {
+  element.replaceChildren();
+  const lines = String(markdown || '').replace(/\r\n?/g, '\n').split('\n');
+  let paragraph = [];
+  let list = null;
+  let quote = [];
+
+  const appendTextBlock = (tag, content) => {
+    const block = document.createElement(tag);
+    appendInlineMarkdown(block, content);
+    element.append(block);
+  };
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    appendTextBlock('p', paragraph.join('\n'));
+    paragraph = [];
+  };
+  const flushList = () => { list = null; };
+  const flushQuote = () => {
+    if (!quote.length) return;
+    const block = document.createElement('blockquote');
+    appendInlineMarkdown(block, quote.join('\n'));
+    element.append(block);
+    quote = [];
+  };
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const fence = line.match(/^\s*```([\w-]*)\s*$/);
+    if (fence) {
+      flushParagraph(); flushList(); flushQuote();
+      const codeLines = [];
+      while (++index < lines.length && !/^\s*```\s*$/.test(lines[index])) codeLines.push(lines[index]);
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      if (fence[1]) code.className = `language-${fence[1]}`;
+      code.textContent = codeLines.join('\n');
+      pre.append(code);
+      element.append(pre);
+      continue;
+    }
+    if (!line.trim()) {
+      flushParagraph(); flushList(); flushQuote();
+      continue;
+    }
+    const heading = line.match(/^\s*(#{1,6})\s+(.+)$/);
+    if (heading) {
+      flushParagraph(); flushList(); flushQuote();
+      appendTextBlock(`h${heading[1].length}`, heading[2]);
+      continue;
+    }
+    if (/^\s*(?:---+|\*\*\*+|___+)\s*$/.test(line)) {
+      flushParagraph(); flushList(); flushQuote();
+      element.append(document.createElement('hr'));
+      continue;
+    }
+    const item = line.match(/^\s*(?:([-+*])|(\d+)\.)\s+(.+)$/);
+    if (item) {
+      flushParagraph(); flushQuote();
+      const tag = item[2] ? 'ol' : 'ul';
+      if (!list || list.tagName.toLowerCase() !== tag) {
+        list = document.createElement(tag);
+        element.append(list);
+      }
+      const listItem = document.createElement('li');
+      appendInlineMarkdown(listItem, item[3]);
+      list.append(listItem);
+      continue;
+    }
+    const quoted = line.match(/^\s*>\s?(.*)$/);
+    if (quoted) {
+      flushParagraph(); flushList();
+      quote.push(quoted[1]);
+      continue;
+    }
+    flushList(); flushQuote();
+    paragraph.push(line);
+  }
+  flushParagraph(); flushQuote();
+}
+
 function renderFinalAgentContent(element, text) {
   const { content, changes } = splitChangeSummary(text);
-  element.textContent = content;
+  element.classList.add('markdown');
+  renderMarkdown(element, content);
   addChangePanel(changes, element);
   scrollToBottom();
 }
@@ -143,7 +259,14 @@ function addBubble(role, text) {
   element.className = `bubble ${role}`;
   messagesEl.append(element);
   if (role === 'agent') renderFinalAgentContent(element, text);
-  else { element.textContent = text; scrollToBottom(); }
+  else if (role === 'user') {
+    element.classList.add('markdown');
+    renderMarkdown(element, text);
+    scrollToBottom();
+  } else {
+    element.textContent = text;
+    scrollToBottom();
+  }
   return element;
 }
 function appendStreamedContent(content) { if (!streamingBubble) { streamingBubble = document.createElement('div'); streamingBubble.className = 'bubble agent'; messagesEl.append(streamingBubble); } streamingBubble.textContent += content; scrollToBottom(); }
@@ -252,9 +375,113 @@ $('settingsForm').onsubmit = async event => { event.preventDefault(); await wind
 $('connectionForm').onsubmit = async event => { event.preventDefault(); await window.vibe.setSettings({ serverUrl: serverUrlEl.value.trim() }); await refreshModelList(modelEl.value); $('connectionModal').hidden = true; };
 modelEl.onchange = () => window.vibe.setSettings({ model: modelEl.value });
 stopBtn.onclick = async () => { if (sending) { stopBtn.disabled = true; setStatus('Stopping…'); await window.vibe.stopMessage(); } };
-composerInput.oninput = () => { composerInput.style.height = 'auto'; composerInput.style.height = `${Math.min(composerInput.scrollHeight, 160)}px`; };
-composerInput.onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); composerForm.requestSubmit(); } };
-composerForm.onsubmit = async event => { event.preventDefault(); const text = composerInput.value.trim(); if (sending || !text || !modelEl.value) return; if (!activeProjectId || !activeChatId) return setStatus('Add a project before sending a message.'); composerInput.value = ''; composerInput.style.height = 'auto'; streamingBubble = null; addBubble('user', text); setSending(true); setStatus('Working…'); const result = await window.vibe.sendMessage({ projectId: activeProjectId, chatId: activeChatId, text }); if (result.ok) { if (streamingBubble) renderFinalAgentContent(streamingBubble, result.content); else addBubble('agent', result.content); chatTitleEl.textContent = result.title; } else addBubble('error', `Error: ${result.error}`); streamingBubble = null; setStatus(result.ok ? 'Ready' : 'Error'); setSending(false); stopBtn.disabled = false; await renderProjects(); };
+let composerFormatTimer = null;
+function composerNodeMarkdown(node) {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent.replace(/\u200B/g, '');
+  if (node.nodeType !== Node.ELEMENT_NODE) return '';
+  const inner = [...node.childNodes].map(composerNodeMarkdown).join('');
+  const tag = node.tagName.toLowerCase();
+  if (tag === 'strong' || tag === 'b') return `**${inner}**`;
+  if (tag === 'em' || tag === 'i') return `*${inner}*`;
+  if (tag === 'del' || tag === 's') return `~~${inner}~~`;
+  if (tag === 'code' && node.parentElement?.tagName !== 'PRE') return `\`${inner}\``;
+  if (tag === 'pre') return `\`\`\`\n${node.innerText.replace(/\n$/, '')}\n\`\`\``;
+  if (/^h[1-6]$/.test(tag)) return `${'#'.repeat(Number(tag[1]))} ${inner}\n`;
+  if (tag === 'blockquote') return `${node.innerText.split('\n').map(line => `> ${line}`).join('\n')}\n`;
+  if (tag === 'a') return `[${inner}](${node.href})`;
+  if (tag === 'li') {
+    const ordered = node.parentElement?.tagName === 'OL';
+    const index = ordered ? [...node.parentElement.children].indexOf(node) + 1 : null;
+    return `${ordered ? `${index}.` : '-'} ${inner}\n`;
+  }
+  if (tag === 'br') return '\n';
+  if (['p', 'div'].includes(tag)) return `${inner}\n`;
+  if (tag === 'hr') return '---\n';
+  return inner;
+}
+function composerMarkdown() {
+  // Block elements contribute one structural newline. Remove only that one;
+  // real trailing blank lines (for example Shift+Enter) remain intact.
+  return [...composerInput.childNodes].map(composerNodeMarkdown).join('').replace(/\n$/, '');
+}
+function placeCaretAtEnd(element) {
+  const range = document.createRange();
+  const lastBlock = element.lastElementChild;
+  const target = lastBlock?.matches('pre') ? lastBlock.querySelector('code') : (lastBlock || element);
+  const lastMeaningfulNode = target
+    ? [...target.childNodes].reverse().find(node => node.nodeType !== Node.TEXT_NODE || node.textContent.length > 0)
+    : null;
+  const inlineCode = lastMeaningfulNode?.nodeType === Node.ELEMENT_NODE && lastMeaningfulNode.matches('code')
+    ? lastMeaningfulNode
+    : null;
+  if (inlineCode) {
+    let caretText = inlineCode.nextSibling;
+    if (!caretText || caretText.nodeType !== Node.TEXT_NODE) {
+      caretText = document.createTextNode('\u200B');
+      inlineCode.after(caretText);
+    } else if (!caretText.textContent) {
+      caretText.textContent = '\u200B';
+    }
+    range.setStart(caretText, caretText.length);
+    range.collapse(true);
+  } else {
+    range.selectNodeContents(target || element);
+    range.collapse(false);
+  }
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+function formatComposer() {
+  const source = composerMarkdown();
+  // Keep an empty line created with Shift+Enter editable. Rendering Markdown
+  // would otherwise discard that trailing blank line and move the caret back.
+  if (source.endsWith('\n')) return;
+  if (!source.trim()) return composerInput.replaceChildren();
+  renderMarkdown(composerInput, source);
+  placeCaretAtEnd(composerInput);
+}
+composerInput.oninput = event => {
+  clearTimeout(composerFormatTimer);
+  // Do not re-render an opening backtick. Transform only a completed inline
+  // code pair or a line containing exactly three backticks.
+  if (event.data === '`') {
+    const source = composerMarkdown();
+    const currentLine = source.split('\n').at(-1);
+    if (currentLine === '```' || /`[^`\n]+`/.test(source)) formatComposer();
+    return;
+  }
+  composerFormatTimer = setTimeout(formatComposer, 350);
+};
+composerInput.onkeydown = event => {
+  const selection = window.getSelection();
+  const anchor = selection?.anchorNode;
+  const anchorElement = anchor?.nodeType === Node.ELEMENT_NODE ? anchor : anchor?.parentElement;
+  const codeBlock = anchorElement?.closest?.('pre');
+  if (event.key === 'ArrowDown' && codeBlock && selection.isCollapsed) {
+    const range = selection.getRangeAt(0);
+    const tail = range.cloneRange();
+    tail.selectNodeContents(codeBlock);
+    tail.setStart(range.endContainer, range.endOffset);
+    if (!tail.toString()) {
+      event.preventDefault();
+      const paragraph = document.createElement('p');
+      paragraph.append(document.createElement('br'));
+      codeBlock.after(paragraph);
+      const nextRange = document.createRange();
+      nextRange.setStart(paragraph, 0);
+      nextRange.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(nextRange);
+      return;
+    }
+  }
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault();
+    composerForm.requestSubmit();
+  }
+};
+composerForm.onsubmit = async event => { event.preventDefault(); clearTimeout(composerFormatTimer); const text = composerMarkdown().trim(); if (sending || !text || !modelEl.value) return; if (!activeProjectId || !activeChatId) return setStatus('Add a project before sending a message.'); composerInput.replaceChildren(); streamingBubble = null; addBubble('user', text); setSending(true); setStatus('Working…'); const result = await window.vibe.sendMessage({ projectId: activeProjectId, chatId: activeChatId, text }); if (result.ok) { if (streamingBubble) renderFinalAgentContent(streamingBubble, result.content); else addBubble('agent', result.content); chatTitleEl.textContent = result.title; } else addBubble('error', `Error: ${result.error}`); streamingBubble = null; setStatus(result.ok ? 'Ready' : 'Error'); setSending(false); stopBtn.disabled = false; await renderProjects(); };
 window.vibe.onEvent(event => {
   if (event.type === 'approval_cancelled') return removeApproval(event.approvalId);
   if (event.chatId !== activeChatId) return;

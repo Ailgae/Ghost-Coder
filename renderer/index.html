@@ -21,7 +21,7 @@
       <header class="chat-header"><div id="chatTitle">New chat</div><div id="status" class="chat-status" aria-live="polite">Ready</div></header>
       <div class="messages" id="messages"></div>
       <form id="composerForm" class="composer">
-        <textarea id="composerInput" placeholder="Tell the agent what to build or fix…" rows="1"></textarea>
+        <div id="composerInput" class="composer-input markdown" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Tell the agent what to build or fix…"></div>
         <div class="composer-footer">
           <div class="composer-tools">
             <button id="settingsBtn" class="settings-btn" type="button" title="Settings" aria-label="Open settings"><span aria-hidden="true">⚙</span></button>
