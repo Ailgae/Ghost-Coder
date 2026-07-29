@@ -24,7 +24,7 @@ tests, builds — anything), and loop on tool calls until the task is done.
 ## 2. Install & run (development)
 
 ```bash
-cd ghost-coder
+cd Ghost-Coder
 npm install
 npm start
 ```
@@ -53,6 +53,7 @@ Click on it to access different settings options.
 Install the dependencies before building:
 
 ```bash
+cd Ghost-Coder
 npm install
 ```
 
@@ -80,6 +81,7 @@ npx electron-builder --linux --x64
 To build for the current platform using the package script:
 
 ```bash
+cd Ghost-Coder
 npm run dist
 ```
 
