@@ -14,14 +14,16 @@ function loadSettings() {
   let saved = {};
   try { saved = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); } catch { /* defaults below */ }
   const cwd = saved.cwd || app.getPath('home');
-  const projects = Array.isArray(saved.projects) && saved.projects.length
+  // An empty array is a valid saved state: users can remove every project.
+  // Only create the initial project when there is no projects setting at all.
+  const projects = Array.isArray(saved.projects)
     ? saved.projects
     : [{ id: id(), name: path.basename(cwd) || 'My project', cwd }];
   return {
     serverUrl: saved.serverUrl || 'http://192.168.68.51:11434',
     model: saved.model || 'qwen2.5-coder',
     projects,
-    activeProjectId: projects.some(project => project.id === saved.activeProjectId) ? saved.activeProjectId : projects[0].id
+    activeProjectId: projects.some(project => project.id === saved.activeProjectId) ? saved.activeProjectId : (projects[0]?.id || null)
   };
 }
 
@@ -42,7 +44,9 @@ function loadConversations() {
   let legacy = { messages: [], history: [] };
   try { legacy = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'conversation.json'), 'utf8')); } catch { /* new install */ }
   const first = settings.projects[0];
-  return { projects: { [first.id]: { chats: [{ ...emptyChat(), ...legacy, id: id() }] } } };
+  return first
+    ? { projects: { [first.id]: { chats: [{ ...emptyChat(), ...legacy, id: id() }] } } }
+    : { projects: {} };
 }
 
 function saveConversations() {
@@ -110,12 +114,11 @@ app.whenReady().then(() => {
     return existing;
   });
   ipcMain.handle('projects:remove', (_evt, projectId) => {
-    if (settings.projects.length <= 1) throw new Error('At least one project must remain.');
     const index = settings.projects.findIndex(project => project.id === projectId);
     if (index === -1) throw new Error('Project not found');
     settings.projects.splice(index, 1);
     delete conversations.projects[projectId];
-    if (settings.activeProjectId === projectId) settings.activeProjectId = settings.projects[0].id;
+    if (settings.activeProjectId === projectId) settings.activeProjectId = settings.projects[0]?.id || null;
     saveSettings(); saveConversations();
     return settings.activeProjectId;
   });

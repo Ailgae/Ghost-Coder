@@ -1,12 +1,56 @@
 const { chat } = require('./ollamaClient');
 const { toolDefinitions, executeTool } = require('./tools');
 const { extractFallbackToolCalls } = require('./toolCallFallback');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const MAX_ITERATIONS = 25;
 const MAX_CHANGE_RETRIES = 2;
+const SNAPSHOT_IGNORED_DIRECTORIES = new Set(['.git', 'node_modules', 'dist', 'build', 'out', 'coverage']);
 
 function requiresFileChange(text) {
   return /\b(add|build|change|create|delete|edit|fix|implement|modify|move|rearrange|remove|rename|replace|update|write)\b/i.test(text);
+}
+
+// Do not rely on which tool the model chose. Shell commands can legitimately
+// edit files too, so verify the project state itself before declaring failure.
+function projectSnapshot(cwd) {
+  const files = new Map();
+
+  function visit(directory) {
+    let entries;
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (entry.isDirectory() && SNAPSHOT_IGNORED_DIRECTORIES.has(entry.name)) continue;
+
+      const absolutePath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        visit(absolutePath);
+      } else if (entry.isFile()) {
+        try {
+          const contents = fs.readFileSync(absolutePath);
+          files.set(path.relative(cwd, absolutePath), crypto.createHash('sha256').update(contents).digest('hex'));
+        } catch {
+          // A file may disappear while a command is running; the next snapshot
+          // will accurately reflect the stable filesystem state.
+        }
+      }
+    }
+  }
+
+  visit(cwd);
+  return files;
+}
+
+function changedPaths(before, after) {
+  const paths = new Set([...before.keys(), ...after.keys()]);
+  return [...paths].filter(filePath => before.get(filePath) !== after.get(filePath));
 }
 
 function systemPrompt(cwd) {
@@ -34,6 +78,7 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, cwd, onEvent
   const changeRequired = requiresFileChange(userMessage);
   let verifiedChanges = 0;
   let changeRetries = 0;
+  let lastSnapshot = changeRequired ? projectSnapshot(cwd) : null;
 
   if (state.messages.length === 0) {
     state.messages.push({ role: 'system', content: systemPrompt(cwd) });
@@ -69,9 +114,16 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, cwd, onEvent
         onEvent({ type: 'tool_call', name, args });
 
         const result = await executeTool(name, args, cwd);
+        if (lastSnapshot) {
+          const nextSnapshot = projectSnapshot(cwd);
+          const changedFiles = changedPaths(lastSnapshot, nextSnapshot);
+          if (changedFiles.length > 0) {
+            verifiedChanges += changedFiles.length;
+            result.changedFiles = changedFiles;
+          }
+          lastSnapshot = nextSnapshot;
+        }
         onEvent({ type: 'tool_result', name, result });
-
-        if (name === 'write_file' && result.ok && result.changed) verifiedChanges++;
 
         state.messages.push({
           role: 'tool',
