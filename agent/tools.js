@@ -27,7 +27,7 @@ const toolDefinitions = [
         type: 'object',
         properties: {
           path: { type: 'string', description: 'File path, relative to the project working directory or absolute.' },
-          content: { type: 'string', description: 'Full content to write to the file.' }
+          content: { type: 'string', description: 'Content to write to the file.' }
         },
         required: ['path', 'content']
       }
@@ -41,7 +41,7 @@ const toolDefinitions = [
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Directory path, relative to the project working directory or absolute. Defaults to the working directory.' }
+          path: { type: 'string', description: 'Directory path, relative to the project working directory or absolute. Defaults to current directory.' }
         }
       }
     }
@@ -50,14 +50,28 @@ const toolDefinitions = [
     type: 'function',
     function: {
       name: 'run_shell',
-      description: 'Run a shell command (bash) in the project working directory. Use this for git, npm/pip/etc installs, running tests, builds, and any other command-line action.',
+      description: 'Run a shell command in the project working directory. Use this for git, npm, or other CLI operations.',
       parameters: {
         type: 'object',
         properties: {
-          command: { type: 'string', description: 'The shell command to execute.' },
-          timeout_seconds: { type: 'number', description: 'Max seconds to allow the command to run before it is killed. Defaults to 120.' }
+          command: { type: 'string', description: 'Shell command to execute.' },
+          timeout_seconds: { type: 'number', description: 'Maximum time in seconds to wait for command completion. Defaults to 120.' }
         },
         required: ['command']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_file',
+      description: 'Delete a file from the filesystem.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'File path to delete, relative to the project working directory or absolute.' }
+        },
+        required: ['path']
       }
     }
   }
@@ -124,6 +138,19 @@ async function executeTool(name, rawArgs, cwd) {
             });
         });
         return result;
+      }
+
+      case 'delete_file': {
+        const target = resolvePath(cwd, args.path);
+        try {
+          fs.unlinkSync(target);
+          return { ok: true, path: target, deleted: true };
+        } catch (err) {
+          if (err.code === 'ENOENT') {
+            return { ok: false, error: `File not found: ${target}` };
+          }
+          throw err;
+        }
       }
 
       default:
