@@ -7,7 +7,15 @@ let sending = false, projects = [], activeProjectId = null, activeChatId = null,
 
 function setStatus(text) { statusEl.textContent = text; }
 function setServerStatus(text, state = 'checking') { serverStatusTextEl.textContent = text; connectionBtn.classList.toggle('connected', state === 'connected'); connectionBtn.classList.toggle('error', state === 'error'); }
-function setSending(value) { sending = value; sendBtn.hidden = value; stopBtn.hidden = !value; composerInput.disabled = value; }
+function setSending(value) {
+  sending = value;
+  sendBtn.hidden = value;
+  stopBtn.hidden = !value;
+  composerInput.disabled = value;
+  composerInput.placeholder = value ? 'Agent is working…' : 'Tell the agent what to build or fix…';
+  composerForm.classList.toggle('is-disabled', value);
+  composerForm.setAttribute('aria-busy', String(value));
+}
 function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
 function splitChangeSummary(text) {
   if (typeof text !== 'string') return { content: text || '', changes: [] };
