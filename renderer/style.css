@@ -710,7 +710,7 @@ html, body {
   display: flex;
   flex-direction: column;
   width: min(1100px, 100%);
-  height: min(760px, 100%);
+  max-height: min(760px, 100%);
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -726,7 +726,7 @@ html, body {
 .diff-columns { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--border); background: #222326; color: var(--muted); font-size: 11px; text-transform: uppercase; }
 .diff-columns span { padding: 7px 48px; }
 .diff-columns span + span { border-left: 1px solid var(--border); }
-.diff-content { flex: 1; overflow: auto; font: 12px/1.5 "SF Mono", Menlo, monospace; }
+.diff-content { flex: 0 1 auto; min-height: 0; overflow: auto; font: 12px/1.5 "SF Mono", Menlo, monospace; }
 .diff-line { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); width: 100%; }
 .diff-line pre {
   position: relative;
@@ -741,6 +741,15 @@ html, body {
 .diff-line pre::before { content: attr(data-line); position: absolute; left: 0; width: 36px; padding-right: 7px; color: #686b73; text-align: right; user-select: none; }
 .diff-line.changed pre:first-child { background: rgba(255, 107, 107, 0.14); }
 .diff-line.changed pre:last-child { background: rgba(88, 199, 123, 0.14); }
+.diff-collapsed {
+  padding: 5px 12px 5px 48px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  background: #202124;
+  color: #858891;
+  font-size: 11px;
+  user-select: none;
+}
 
 .toggle-slider {
   position: absolute;

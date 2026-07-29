@@ -59,13 +59,49 @@ function diffRows(before, after) {
   for (let index = 0; index < suffixLength; index++) rows.push({ before: left[leftEnd + 1 + index], after: right[rightEnd + 1 + index], type: 'same' });
   return rows;
 }
+function compactDiffRows(rows, contextLines = 3) {
+  const compacted = [];
+  let index = 0;
+  while (index < rows.length) {
+    if (rows[index].type !== 'same') {
+      compacted.push(rows[index++]);
+      continue;
+    }
+
+    let end = index;
+    while (end < rows.length && rows[end].type === 'same') end++;
+    const runLength = end - index;
+    const keepStart = index === 0 ? 0 : Math.min(contextLines, runLength);
+    const keepEnd = end === rows.length ? 0 : Math.min(contextLines, runLength - keepStart);
+    const omitted = runLength - keepStart - keepEnd;
+
+    if (omitted <= contextLines) {
+      compacted.push(...rows.slice(index, end));
+    } else {
+      compacted.push(...rows.slice(index, index + keepStart));
+      compacted.push({ type: 'collapsed', count: omitted });
+      compacted.push(...rows.slice(end - keepEnd, end));
+    }
+    index = end;
+  }
+  return compacted;
+}
 function openDiff(change) {
   if (!change.diff) return;
   diffTitleEl.textContent = change.path;
   diffStatsEl.textContent = `+${change.added}  −${change.removed}`;
   diffContentEl.replaceChildren();
   let beforeLine = 0, afterLine = 0;
-  diffRows(change.diff.before, change.diff.after).forEach(row => {
+  compactDiffRows(diffRows(change.diff.before, change.diff.after)).forEach(row => {
+    if (row.type === 'collapsed') {
+      beforeLine += row.count;
+      afterLine += row.count;
+      const separator = document.createElement('div');
+      separator.className = 'diff-collapsed';
+      separator.textContent = `⋯ ${row.count} unchanged line${row.count === 1 ? '' : 's'}`;
+      diffContentEl.append(separator);
+      return;
+    }
     const line = document.createElement('div');
     line.className = `diff-line ${row.type}`;
     const before = document.createElement('pre');
