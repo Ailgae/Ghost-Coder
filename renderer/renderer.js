@@ -44,21 +44,7 @@ function splitChangeSummary(text) {
   if (changes.some(change => !change)) return { content: text, changes: [] };
   return { content: text.slice(0, markerIndex).trim(), changes };
 }
-function diffRows(before, after) {
-  const left = before === null ? [] : before.split('\n');
-  const right = after === null ? [] : after.split('\n');
-  let start = 0;
-  while (start < left.length && start < right.length && left[start] === right[start]) start++;
-  let leftEnd = left.length - 1, rightEnd = right.length - 1;
-  while (leftEnd >= start && rightEnd >= start && left[leftEnd] === right[rightEnd]) { leftEnd--; rightEnd--; }
-  const rows = [];
-  for (let index = 0; index < start; index++) rows.push({ before: left[index], after: right[index], type: 'same' });
-  const changedLength = Math.max(leftEnd - start + 1, rightEnd - start + 1);
-  for (let index = 0; index < changedLength; index++) rows.push({ before: left[start + index], after: right[start + index], type: 'changed' });
-  const suffixLength = left.length - leftEnd - 1;
-  for (let index = 0; index < suffixLength; index++) rows.push({ before: left[leftEnd + 1 + index], after: right[rightEnd + 1 + index], type: 'same' });
-  return rows;
-}
+const { diffRows } = window.GhostDiff;
 function compactDiffRows(rows, contextLines = 3) {
   const compacted = [];
   let index = 0;
