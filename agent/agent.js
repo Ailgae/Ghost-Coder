@@ -139,6 +139,29 @@ function appendChangeSummary(text, changes) {
   return `${text.trim()}\n\nFiles changed:\n${lines.join('\n')}\n\nDiff data:\n${diffData}`;
 }
 
+function compactPreviousContext(messages) {
+  return messages.filter((message, index) => {
+    if (message.role === 'tool') return false;
+    if (message.role === 'assistant' && Array.isArray(message.tool_calls) && message.tool_calls.length) return false;
+    if (message.role === 'assistant' && messages[index + 1]?.role === 'tool') return false;
+    if (
+      message.role === 'user' &&
+      typeof message.content === 'string' &&
+      message.content.startsWith('Continue implementing the original request:')
+    ) return false;
+    return true;
+  });
+}
+
+function finishTurn(state, turnStartIndex, userMessage, assistantMessage) {
+  state.messages.splice(
+    turnStartIndex,
+    state.messages.length - turnStartIndex,
+    { role: 'user', content: userMessage },
+    { role: 'assistant', content: assistantMessage }
+  );
+}
+
 function systemPrompt(cwd, allowGit) {
   const gitCapabilities = allowGit
     ? 'You may run Git commands and modify Git metadata when needed to fulfill the user’s request.'
@@ -148,6 +171,7 @@ function systemPrompt(cwd, allowGit) {
 You have tools to read/write files, list directories, and run shell commands (npm, pip, tests, builds, etc). File writes, deletions, and shell commands require the user's approval before they execute. Read-only tools run automatically.
 
 Guidelines:
+- Treat every user message as part of the current conversation. Use prior user and assistant messages to resolve references such as "it", "that", "the widget", and "the previous change"; do not handle a follow-up as a new unrelated request.
 - Break down the user's request into concrete steps and carry them out using the tools, rather than just describing what should be done.
 - ${gitCapabilities}
 - Always invoke tools using the proper tool-calling mechanism. Never write raw JSON describing a tool call as plain text in your reply — if you want to call a tool, actually call it.
@@ -173,9 +197,11 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, streamRespon
   const initialSnapshot = projectSnapshot(cwd);
   let lastSnapshot = initialSnapshot;
 
+  state.messages = compactPreviousContext(Array.isArray(state.messages) ? state.messages : []);
   const prompt = { role: 'system', content: systemPrompt(cwd, allowGit) };
   if (state.messages[0]?.role === 'system') state.messages[0] = prompt;
   else state.messages.unshift(prompt);
+  const turnStartIndex = state.messages.length;
   state.messages.push({ role: 'user', content: userMessage });
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
@@ -254,6 +280,7 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, streamRespon
 
       const noChangeMessage = 'No files were modified. The model did not make a verified write after retrying, so the requested change was not applied.';
       onEvent({ type: 'final', content: noChangeMessage });
+      finishTurn(state, turnStartIndex, userMessage, noChangeMessage);
       return noChangeMessage;
     }
 
@@ -266,11 +293,13 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, streamRespon
       fileChangeSummary(initialSnapshot, projectSnapshot(cwd))
     );
     onEvent({ type: 'final', content: finalText });
+    finishTurn(state, turnStartIndex, userMessage, responseText);
     return finalText;
   }
 
   const timeoutMsg = 'Stopped after reaching the maximum number of tool-call steps for this turn. Ask me to continue if more work is needed.';
   onEvent({ type: 'final', content: timeoutMsg });
+  finishTurn(state, turnStartIndex, userMessage, timeoutMsg);
   return timeoutMsg;
 }
 
