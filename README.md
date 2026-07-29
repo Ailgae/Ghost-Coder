@@ -3,7 +3,7 @@
 **A vibe coder that's vibe coded!**
 
 A tiny native-feeling chat app that talks to a remote Ollama server and acts
-as a coding agent: it can read/write files, run non-Git shell commands (npm,
+as a coding agent: it can read/write files, run shell commands (npm,
 tests, builds — anything), and loop on tool calls until the task is done.
 
 ## 1. Requirements
@@ -107,8 +107,6 @@ gives a final text answer (capped at 25 steps per turn as a safety valve).
   that exact file path. Simple shell commands can be permanently approved by
   executable type (for example, `npm`); compound commands using shell operators
   always require one-time approval. Deletions always require approval.
-- **Git is protected by default.** Enable **Allow Git modifications** in
-  Settings to let the agent run Git commands and modify `.git` metadata.
 - **Model must support tool calling.** Qwen2.5-coder, Llama 3.1+, and Mistral
   Nemo all work with Ollama's tool-calling format. Older/smaller models may
   ignore the `tools` field and just reply with plain text.
