@@ -17,6 +17,7 @@
     "mocha": "^11.7.6"
   },
   "overrides": {
+    "@noble/hashes": "1.8.0",
     "brace-expansion": "^5.0.8",
     "diff": "^8.0.3",
     "serialize-javascript": "^7.0.5"
@@ -36,10 +37,18 @@
       "package.json"
     ],
     "mac": {
-      "icon": "assets/icon.png"
+      "icon": "assets/icon.icns"
+    },
+    "dmg": {
+      "icon": "assets/icon.icns",
+      "badgeIcon": "assets/icon.icns"
     },
     "win": {
-      "icon": "assets/icon.png"
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "installerIcon": "assets/installer-icon.ico",
+      "uninstallerIcon": "assets/installer-icon.ico"
     },
     "linux": {
       "icon": "assets/icon.png"
