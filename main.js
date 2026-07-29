@@ -22,6 +22,7 @@ function loadSettings() {
   return {
     serverUrl: saved.serverUrl || 'http://localhost:11434',
     model: saved.model || 'qwen2.5-coder',
+    streamResponses: saved.streamResponses !== false,
     projects,
     activeProjectId: projects.some(project => project.id === saved.activeProjectId) ? saved.activeProjectId : (projects[0]?.id || null)
   };
@@ -163,7 +164,7 @@ app.whenReady().then(() => {
     if (chat.title === 'New chat') chat.title = text.replace(/\s+/g, ' ').slice(0, 42) || 'New chat';
     saveConversations();
     try {
-      const content = await runAgentTurn({ state: chat, userMessage: text, serverUrl: settings.serverUrl, model: settings.model, cwd: project.cwd, signal: controller.signal, onEvent: event => sender.send('chat:event', { ...event, chatId }) });
+      const content = await runAgentTurn({ state: chat, userMessage: text, serverUrl: settings.serverUrl, model: settings.model, streamResponses: settings.streamResponses, cwd: project.cwd, signal: controller.signal, onEvent: event => sender.send('chat:event', { ...event, chatId }) });
       chat.history.push({ role: 'agent', content }); saveConversations();
       return { ok: true, content, title: chat.title };
     } catch (err) {

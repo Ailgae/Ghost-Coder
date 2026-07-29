@@ -3,7 +3,7 @@
 **A vibe coder that's vibe coded!**
 
 A tiny native-feeling chat app that talks to a remote Ollama server and acts
-as a coding agent: it can read/write files, run shell commands (git, npm,
+as a coding agent: it can read/write files, run non-Git shell commands (npm,
 tests, builds — anything), and loop on tool calls until the task is done.
 
 ## 1. Requirements
@@ -69,6 +69,8 @@ This uses `electron-builder` to produce the packaged application under `dist/`.
   it will run shell commands (including destructive ones) without asking.
   If you want a safety net, the easiest addition is a per-command confirm
   dialog in `tools.js`'s `run_shell` case.
+- **Git is protected.** The agent cannot run Git commands or modify `.git`
+  metadata. Commits, branches, tags, and pushes remain under your control.
 - **Single conversation.** The current conversation and agent context persist
   across app restarts. Use "New chat" to clear the saved conversation.
 - **Model must support tool calling.** Qwen2.5-coder, Llama 3.1+, and Mistral

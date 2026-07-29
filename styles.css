@@ -1,0 +1,26 @@
+/* Basic styles for the app */
+.app {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background-color: #f0f0f0;
+}
+
+/* Styles for the gear button */
+#gear-button {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    padding: 10px;
+    border: none;
+    background-color: #3498db;
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+    border-radius: 50%;
+}
+
+#gear-button:hover {
+    background-color: #2980b9;
+}

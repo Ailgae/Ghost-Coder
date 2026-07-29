@@ -35,7 +35,10 @@ function projectSnapshot(cwd) {
       } else if (entry.isFile()) {
         try {
           const contents = fs.readFileSync(absolutePath);
-          files.set(path.relative(cwd, absolutePath), crypto.createHash('sha256').update(contents).digest('hex'));
+          files.set(path.relative(cwd, absolutePath), {
+            hash: crypto.createHash('sha256').update(contents).digest('hex'),
+            contents
+          });
         } catch {
           // A file may disappear while a command is running; the next snapshot
           // will accurately reflect the stable filesystem state.
@@ -50,21 +53,93 @@ function projectSnapshot(cwd) {
 
 function changedPaths(before, after) {
   const paths = new Set([...before.keys(), ...after.keys()]);
-  return [...paths].filter(filePath => before.get(filePath) !== after.get(filePath));
+  return [...paths].filter(filePath => before.get(filePath)?.hash !== after.get(filePath)?.hash);
+}
+
+function linesIn(contents) {
+  if (!contents || contents.length === 0) return [];
+  const text = contents.toString('utf8');
+  const lines = text.split('\n');
+  if (text.endsWith('\n')) lines.pop();
+  return lines;
+}
+
+// Myers' diff algorithm gives the shortest number of inserted/deleted lines
+// without requiring Git or storing a quadratic edit matrix.
+function changedLineCounts(oldContents, newContents) {
+  const oldLines = linesIn(oldContents);
+  const newLines = linesIn(newContents);
+  const oldLength = oldLines.length;
+  const newLength = newLines.length;
+  const furthestX = new Map([[1, 0]]);
+
+  for (let edits = 0; edits <= oldLength + newLength; edits++) {
+    for (let diagonal = -edits; diagonal <= edits; diagonal += 2) {
+      let x;
+      if (
+        diagonal === -edits ||
+        (diagonal !== edits &&
+          (furthestX.get(diagonal - 1) ?? -Infinity) < (furthestX.get(diagonal + 1) ?? -Infinity))
+      ) {
+        x = furthestX.get(diagonal + 1) ?? 0;
+      } else {
+        x = (furthestX.get(diagonal - 1) ?? 0) + 1;
+      }
+
+      let y = x - diagonal;
+      while (x < oldLength && y < newLength && oldLines[x] === newLines[y]) {
+        x++;
+        y++;
+      }
+      furthestX.set(diagonal, x);
+
+      if (x >= oldLength && y >= newLength) {
+        return {
+          added: (edits + newLength - oldLength) / 2,
+          removed: (edits + oldLength - newLength) / 2
+        };
+      }
+    }
+  }
+
+  return { added: newLength, removed: oldLength };
+}
+
+function fileChangeSummary(before, after) {
+  return changedPaths(before, after).sort().map(filePath => {
+    const oldFile = before.get(filePath);
+    const newFile = after.get(filePath);
+    const counts = changedLineCounts(oldFile?.contents, newFile?.contents);
+
+    return {
+      path: filePath,
+      ...counts
+    };
+  });
+}
+
+function appendChangeSummary(text, changes) {
+  if (changes.length === 0) return text;
+
+  const lines = changes.map(change =>
+    `- ${change.path}: +${change.added} / -${change.removed}`
+  );
+  return `${text.trim()}\n\nFiles changed:\n${lines.join('\n')}`;
 }
 
 function systemPrompt(cwd) {
   return `You are an autonomous coding agent running on the user's Mac, operating in the project directory: ${cwd}
 
-You have tools to read/write files, list directories, and run shell commands (git, npm, pip, tests, builds, etc). You have full autonomy to use them without asking for confirmation.
+You have tools to read/write files, list directories, and run non-Git shell commands (npm, pip, tests, builds, etc). You have full autonomy to use them without asking for confirmation.
 
 Guidelines:
 - Break down the user's request into concrete steps and carry them out using the tools, rather than just describing what should be done.
+- Never run Git commands, access or modify .git metadata, create commits or tags, change branches, or push to a remote. Repository management belongs exclusively to the user.
 - Always invoke tools using the proper tool-calling mechanism. Never write raw JSON describing a tool call as plain text in your reply — if you want to call a tool, actually call it.
 - For a request to change the project, you must inspect the relevant files and make the edit with write_file or run_shell before replying. A plan or explanation alone is not a completed change.
-- Prefer running commands (e.g. "git status", "npm test") to verify state before and after changes.
+- Prefer running relevant tests or build commands (e.g. "npm test") to verify changes.
 - When you write code, write complete, working files rather than snippets.
-- When you are done, give a concise summary of what you did and any follow-up the user should know about.
+- When you are done, give a concise summary of what you did and any follow-up the user should know about. The application automatically appends the changed filenames and added/removed line counts, so do not invent or duplicate that list.
 - If something fails, read the error, adjust, and retry a reasonable number of times before reporting the failure back to the user.`;
 }
 
@@ -75,11 +150,12 @@ Guidelines:
  * onEvent also receives incremental `content_delta` events while Ollama
  * generates text, along with tool, thinking, note, and final events.
  */
-async function runAgentTurn({ state, userMessage, serverUrl, model, cwd, onEvent, signal }) {
+async function runAgentTurn({ state, userMessage, serverUrl, model, streamResponses = true, cwd, onEvent, signal }) {
   const changeRequired = requiresFileChange(userMessage);
   let verifiedChanges = 0;
   let changeRetries = 0;
-  let lastSnapshot = changeRequired ? projectSnapshot(cwd) : null;
+  const initialSnapshot = projectSnapshot(cwd);
+  let lastSnapshot = initialSnapshot;
 
   if (state.messages.length === 0) {
     state.messages.push({ role: 'system', content: systemPrompt(cwd) });
@@ -93,8 +169,9 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, cwd, onEvent
       model,
       messages: state.messages,
       tools: toolDefinitions,
+      stream: streamResponses,
       signal,
-      onContent: content => onEvent({ type: 'content_delta', content })
+      onContent: streamResponses ? content => onEvent({ type: 'content_delta', content }) : null
     });
     state.messages.push(message);
 
@@ -122,15 +199,13 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, cwd, onEvent
         onEvent({ type: 'tool_call', name, args });
 
         const result = await executeTool(name, args, cwd);
-        if (lastSnapshot) {
-          const nextSnapshot = projectSnapshot(cwd);
-          const changedFiles = changedPaths(lastSnapshot, nextSnapshot);
-          if (changedFiles.length > 0) {
-            verifiedChanges += changedFiles.length;
-            result.changedFiles = changedFiles;
-          }
-          lastSnapshot = nextSnapshot;
+        const nextSnapshot = projectSnapshot(cwd);
+        const changedFiles = changedPaths(lastSnapshot, nextSnapshot);
+        if (changedFiles.length > 0) {
+          verifiedChanges += changedFiles.length;
+          result.changedFiles = changedFiles;
         }
+        lastSnapshot = nextSnapshot;
         onEvent({ type: 'tool_result', name, result });
 
         state.messages.push({
@@ -161,9 +236,13 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, cwd, onEvent
     }
 
     // No tool calls -> this is the final answer.
-    const finalText = typeof message.content === "string" && message.content.trim()
+    const responseText = typeof message.content === "string" && message.content.trim()
       ? message.content
       : "The model returned an empty response. Please try again.";
+    const finalText = appendChangeSummary(
+      responseText,
+      fileChangeSummary(initialSnapshot, projectSnapshot(cwd))
+    );
     onEvent({ type: 'final', content: finalText });
     return finalText;
   }

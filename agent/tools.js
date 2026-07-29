@@ -50,7 +50,7 @@ const toolDefinitions = [
     type: 'function',
     function: {
       name: 'run_shell',
-      description: 'Run a shell command in the project working directory. Use this for git, npm, or other CLI operations.',
+      description: 'Run a non-Git shell command in the project working directory. Git commands and access to Git metadata are blocked.',
       parameters: {
         type: 'object',
         properties: {
@@ -82,6 +82,16 @@ function resolvePath(cwd, p) {
   return path.isAbsolute(p) ? p : path.join(cwd, p);
 }
 
+function touchesGitMetadata(target) {
+  return path.resolve(target).split(path.sep).some(part => part.toLowerCase() === '.git');
+}
+
+function attemptsGitAccess(command) {
+  const gitExecutable = /(^|[\s;&|()])(?:[^\s;&|()]*[\\/])?git(?:\.exe)?(?=$|[\s;&|()])/i;
+  const gitMetadata = /(^|[\\/\s'"])\.git(?:[\\/\s'"]|$)/i;
+  return gitExecutable.test(command) || gitMetadata.test(command);
+}
+
 async function executeTool(name, rawArgs, cwd) {
   let args = rawArgs;
   if (typeof rawArgs === 'string') {
@@ -99,6 +109,9 @@ async function executeTool(name, rawArgs, cwd) {
 
       case 'write_file': {
         const target = resolvePath(cwd, args.path);
+        if (touchesGitMetadata(target)) {
+          return { ok: false, error: 'Git metadata is protected and cannot be modified.' };
+        }
         const content = args.content ?? '';
         let previousContent = null;
         try { previousContent = fs.readFileSync(target, 'utf8'); } catch (err) {
@@ -124,9 +137,14 @@ async function executeTool(name, rawArgs, cwd) {
       }
 
       case 'run_shell': {
+        if (attemptsGitAccess(args.command || '')) {
+          return { ok: false, error: 'Git commands and Git metadata access are disabled.' };
+        }
         const timeoutMs = (args.timeout_seconds || 120) * 1000;
         const result = await new Promise((resolve) => {
-          exec(args.command, { cwd, timeout: timeoutMs, maxBuffer: 1024 * 1024 * 10, shell: '/bin/bash' },
+          const gitDisabledPath = path.join(cwd, '.ghost-coder-git-disabled');
+          const env = { ...process.env, GIT_DIR: gitDisabledPath, GIT_WORK_TREE: gitDisabledPath };
+          exec(args.command, { cwd, env, timeout: timeoutMs, maxBuffer: 1024 * 1024 * 10, shell: '/bin/bash' },
             (error, stdout, stderr) => {
               resolve({
                 ok: !error,
@@ -142,6 +160,9 @@ async function executeTool(name, rawArgs, cwd) {
 
       case 'delete_file': {
         const target = resolvePath(cwd, args.path);
+        if (touchesGitMetadata(target)) {
+          return { ok: false, error: 'Git metadata is protected and cannot be deleted.' };
+        }
         try {
           fs.unlinkSync(target);
           return { ok: true, path: target, deleted: true };

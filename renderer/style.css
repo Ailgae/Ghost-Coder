@@ -411,12 +411,43 @@ html, body {
 .chat-row:hover .remove-chat, .chat-row.active .remove-chat { opacity: 1; }
 
 .server-status-btn {
-  margin-top: auto;
   display: flex;
   align-items: center;
   gap: 8px;
   text-align: left;
 }
+
+.sidebar-footer {
+  margin-top: auto;
+  display: grid;
+  gap: 6px;
+}
+
+.sidebar-footer .server-status-btn {
+  width: 100%;
+}
+
+.settings-btn {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.connection-btn:hover, .settings-btn:hover {
+  border-color: #4b4d52;
+  background: #303136;
+}
+
+.settings-btn:hover { color: var(--text); }
 
 .status-dot {
   width: 8px;
@@ -464,8 +495,61 @@ html, body {
 
 .modal-card select:focus, .modal-card input:focus { outline: none; border-color: var(--accent); }
 
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 18px;
+  cursor: pointer;
+}
+
+.toggle-copy { display: grid; gap: 3px; }
+.toggle-row strong { font-size: 13px; font-weight: 500; }
+.toggle-row small { color: var(--muted); font-size: 11.5px; }
+
+.toggle-switch {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  flex: 0 0 42px;
+}
+
+.modal-card .toggle-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: #4b4d52;
+  transition: background 160ms ease;
+}
+
+.toggle-slider::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform 160ms ease;
+}
+
+.toggle-switch input:checked + .toggle-slider { background: var(--accent); }
+.toggle-switch input:checked + .toggle-slider::after { transform: translateX(18px); }
+.toggle-switch input:focus-visible + .toggle-slider { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 .modal-actions-spacer { flex: 1; }
 .modal-actions .danger-btn { background: transparent; border-color: var(--error); color: var(--error); }
-.modal-actions #connectBtn { background: var(--accent); color: #10131a; border-color: var(--accent); font-weight: 600; }
+.modal-actions #connectBtn, .modal-actions #saveSettingsBtn { background: var(--accent); color: #10131a; border-color: var(--accent); font-weight: 600; }
 .modal-actions .secondary-btn { background: transparent; }

@@ -1,7 +1,7 @@
 // Thin wrapper around Ollama's /api/chat endpoint with tool-calling support.
 // Docs: https://github.com/ollama/ollama/blob/main/docs/api.md#chat-request-with-tools
 
-async function chat({ serverUrl, model, messages, tools, signal, onContent }) {
+async function chat({ serverUrl, model, messages, tools, stream = true, signal, onContent }) {
   const url = `${serverUrl.replace(/\/$/, '')}/api/chat`;
 
   const res = await fetch(url, {
@@ -11,7 +11,7 @@ async function chat({ serverUrl, model, messages, tools, signal, onContent }) {
       model,
       messages,
       tools,
-      stream: true,
+      stream,
       options: {
         temperature: 0.2
       }

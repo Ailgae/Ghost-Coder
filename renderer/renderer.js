@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
-const serverUrlEl = $('serverUrl'), modelEl = $('model'), statusEl = $('status'), messagesEl = $('messages');
+const serverUrlEl = $('serverUrl'), streamResponsesEl = $('streamResponses'), modelEl = $('model'), statusEl = $('status'), messagesEl = $('messages');
 const composerForm = $('composerForm'), composerInput = $('composerInput'), sendBtn = $('sendBtn'), stopBtn = $('stopBtn');
-const connectionBtn = $('connectionBtn'), serverStatusTextEl = $('serverStatusText'), projectsListEl = $('projectsList'), chatTitleEl = $('chatTitle');
+const connectionBtn = $('connectionBtn'), settingsBtn = $('settingsBtn'), serverStatusTextEl = $('serverStatusText'), projectsListEl = $('projectsList'), chatTitleEl = $('chatTitle');
 const projectModal = $('projectModal'), projectForm = $('projectForm'), projectNameEl = $('projectName'), projectPathEl = $('projectPath');
 let sending = false, projects = [], activeProjectId = null, activeChatId = null, editingProjectId = null, streamingBubble = null;
 
@@ -52,14 +52,22 @@ async function removeChat(projectId, chatId) { if (sending) return; const replac
 function openProjectModal(project) { editingProjectId = project?.id || null; $('projectModalTitle').textContent = project ? 'Edit project' : 'Add project'; projectNameEl.value = project?.name || ''; projectPathEl.value = project?.cwd || ''; $('removeProjectBtn').hidden = !project; projectModal.hidden = false; projectNameEl.focus(); }
 function closeProjectModal() { projectModal.hidden = true; }
 function showNoProject() { activeProjectId = null; activeChatId = null; messagesEl.replaceChildren(); chatTitleEl.textContent = 'No project selected'; setStatus('No projects. Add a project to start.'); }
-async function initialize() { setSending(false); const settings = await window.vibe.getSettings(); serverUrlEl.value = settings.serverUrl || ''; projects = await window.vibe.listProjects(); activeProjectId = settings.activeProjectId || projects[0]?.id || null; if (activeProjectId) { const chats = await window.vibe.listChats(activeProjectId); await selectChat(chats[0]?.id, false); } else showNoProject(); await renderProjects(); refreshModelList(settings.model || ''); }
+async function initialize() { setSending(false); const settings = await window.vibe.getSettings(); serverUrlEl.value = settings.serverUrl || ''; streamResponsesEl.checked = settings.streamResponses !== false; projects = await window.vibe.listProjects(); activeProjectId = settings.activeProjectId || projects[0]?.id || null; if (activeProjectId) { const chats = await window.vibe.listChats(activeProjectId); await selectChat(chats[0]?.id, false); } else showNoProject(); await renderProjects(); refreshModelList(settings.model || ''); }
 
 $('addProjectBtn').onclick = () => openProjectModal();
 $('pickProjectDirBtn').onclick = async () => { const path = await window.vibe.pickDirectory(); if (path) { projectPathEl.value = path; if (!projectNameEl.value) projectNameEl.value = path.split('/').filter(Boolean).pop() || ''; } };
 $('cancelProjectBtn').onclick = closeProjectModal; projectModal.onclick = event => { if (event.target === projectModal) closeProjectModal(); };
 $('removeProjectBtn').onclick = async () => { const project = projects.find(item => item.id === editingProjectId); if (!project || !window.confirm(`Remove “${project.name}” and its saved chats? Project files on disk will not be deleted.`)) return; try { const nextProjectId = await window.vibe.removeProject(project.id); projects = await window.vibe.listProjects(); closeProjectModal(); if (nextProjectId) await selectProject(nextProjectId); else { showNoProject(); await renderProjects(); } } catch (error) { setStatus(error.message); } };
 projectForm.onsubmit = async event => { event.preventDefault(); if (!projectPathEl.value) return setStatus('Choose a project directory'); const payload = { id: editingProjectId, name: projectNameEl.value, cwd: projectPathEl.value }; let projectId = editingProjectId; if (projectId) await window.vibe.updateProject(payload); else projectId = (await window.vibe.createProject(payload)).id; projects = await window.vibe.listProjects(); closeProjectModal(); await selectProject(projectId); };
-connectionBtn.onclick = () => { $('connectionModal').hidden = false; serverUrlEl.focus(); }; $('cancelConnectionBtn').onclick = () => { $('connectionModal').hidden = true; };
+function openConnection() { $('connectionModal').hidden = false; serverUrlEl.focus(); }
+function openSettings() { $('settingsModal').hidden = false; streamResponsesEl.focus(); }
+connectionBtn.onclick = openConnection;
+settingsBtn.onclick = openSettings;
+$('cancelConnectionBtn').onclick = () => { $('connectionModal').hidden = true; };
+$('connectionModal').onclick = event => { if (event.target === $('connectionModal')) $('connectionModal').hidden = true; };
+$('cancelSettingsBtn').onclick = () => { $('settingsModal').hidden = true; };
+$('settingsModal').onclick = event => { if (event.target === $('settingsModal')) $('settingsModal').hidden = true; };
+$('settingsForm').onsubmit = async event => { event.preventDefault(); await window.vibe.setSettings({ streamResponses: streamResponsesEl.checked }); $('settingsModal').hidden = true; };
 $('connectionForm').onsubmit = async event => { event.preventDefault(); await window.vibe.setSettings({ serverUrl: serverUrlEl.value.trim() }); await refreshModelList(modelEl.value); $('connectionModal').hidden = true; };
 modelEl.onchange = () => window.vibe.setSettings({ model: modelEl.value });
 stopBtn.onclick = async () => { if (sending) { stopBtn.disabled = true; setStatus('Stopping…'); await window.vibe.stopMessage(); } };

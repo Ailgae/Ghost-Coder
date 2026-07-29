@@ -2,17 +2,19 @@
 <html lang='en'>
 <head>
     <meta charset='UTF-8'>
-    <title>Confirmation Dialog Example</title>
+    <title>GhostCoder</title>
+    <link rel='stylesheet' href='styles.css'>
 </head>
 <body>
-    <button id='trigger-dialog'>Trigger Confirmation Dialog</button>
+    <!-- Include the main application -->
+    <div id='app'></div>
 
-    <!-- Include the confirmation dialog HTML -->
+    <!-- Include the settings dialog HTML -->
     <div>
-        {{ include 'src/components/ConfirmationDialog.html' }}
+        {{ include 'src/components/SettingsDialog.html' }}
     </div>
 
-    <!-- Include the confirmation dialog JavaScript -->
-    <script src='src/components/ConfirmationDialog.js'></script>
+    <!-- Include the settings dialog JavaScript -->
+    <script src='src/components/SettingsDialog.js'></script>
 </body>
 </html>
