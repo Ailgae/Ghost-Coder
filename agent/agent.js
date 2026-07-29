@@ -10,7 +10,12 @@ const MAX_CHANGE_RETRIES = 2;
 const SNAPSHOT_IGNORED_DIRECTORIES = new Set(['.git', 'node_modules', 'dist', 'build', 'out', 'coverage']);
 
 function requiresFileChange(text) {
-  return /\b(add|build|change|create|delete|edit|fix|implement|modify|move|rearrange|remove|rename|replace|update|write)\b/i.test(text);
+  const informationalRequest = /^\s*(?:how|why|what|when|where|which|who|should\s+i|can\s+you\s+(?:explain|describe|review|summarize)|could\s+you\s+(?:explain|describe|review|summarize)|explain|describe|review|summarize)\b/i;
+  if (informationalRequest.test(text)) return false;
+
+  const editVerb = /\b(?:add|adjust|build|change|configure|correct|create|delete|edit|enhance|fix|implement|improve|make|modif(?:y|ies|ied|ying|ication|ications)|move|rearrange|refactor|remove|rename|repair|replace|resolve|restyle|set|style|tweak|update|upgrade|write)(?:s|d|ed|ing)?\b/i;
+  const requiredOutcome = /\b(?:please|should|must|needs?\s+to|i\s+(?:need|want|would\s+like))\b/i;
+  return editVerb.test(text) || requiredOutcome.test(text);
 }
 
 // Do not rely on which tool the model chose. Shell commands can legitimately
@@ -156,7 +161,6 @@ Guidelines:
  */
 async function runAgentTurn({ state, userMessage, serverUrl, model, streamResponses = true, allowGit = false, cwd, onEvent, approveTool, signal }) {
   const changeRequired = requiresFileChange(userMessage);
-  let verifiedChanges = 0;
   let changeRetries = 0;
   let mutationDenied = false;
   const initialSnapshot = projectSnapshot(cwd);
@@ -212,7 +216,6 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, streamRespon
         const nextSnapshot = projectSnapshot(cwd);
         const changedFiles = changedPaths(lastSnapshot, nextSnapshot);
         if (changedFiles.length > 0) {
-          verifiedChanges += changedFiles.length;
           result.changedFiles = changedFiles;
         }
         lastSnapshot = nextSnapshot;
@@ -229,7 +232,9 @@ async function runAgentTurn({ state, userMessage, serverUrl, model, streamRespon
 
     // A plain-text answer is not evidence that a requested edit happened.
     // Give the model a bounded opportunity to use the editing tool instead.
-    if (changeRequired && verifiedChanges === 0 && !mutationDenied) {
+    const currentSnapshot = projectSnapshot(cwd);
+    const hasNetFileChanges = changedPaths(initialSnapshot, currentSnapshot).length > 0;
+    if (changeRequired && !hasNetFileChanges && !mutationDenied) {
       if (changeRetries < MAX_CHANGE_RETRIES) {
         changeRetries++;
         state.messages.push({

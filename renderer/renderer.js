@@ -201,7 +201,7 @@ window.vibe.onEvent(event => {
   if (event.type === 'approval_cancelled') return removeApproval(event.approvalId);
   if (event.chatId !== activeChatId) return;
   if (event.type === 'content_delta') appendStreamedContent(event.content);
-  else if (event.type === 'note') addBubble('agent', event.content);
+  else if (event.type === 'note') { discardStreamedContent(); addBubble('agent', event.content); }
   else if (event.type === 'thinking') addAction('Thinking', event.content);
   else if (event.type === 'tool_call') { discardStreamedContent(); addAction(describeToolCall(event.name, event.args), JSON.stringify(event.args, null, 2)); }
   else if (event.type === 'tool_result') addAction(`${event.result?.ok ? '✓' : '✗'} ${event.name} result`, JSON.stringify(event.result, null, 2));
