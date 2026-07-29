@@ -51,7 +51,14 @@
       "uninstallerIcon": "assets/installer-icon.ico"
     },
     "linux": {
-      "icon": "assets/icon.png"
+      "icon": "assets/icon.png",
+      "target": [
+        "deb",
+        "rpm",
+        "pacman",
+        "AppImage",
+        "tar.gz"
+      ]
     }
   }
 }
