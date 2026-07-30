@@ -461,7 +461,7 @@ function composerNodeMarkdown(node) {
   if (tag === 'em' || tag === 'i') return `*${inner}*`;
   if (tag === 'del' || tag === 's') return `~~${inner}~~`;
   if (tag === 'code' && node.parentElement?.tagName !== 'PRE') return `\`${inner}\``;
-  if (tag === 'pre') return `\`\`\`\n${node.innerText.replace(/\n$/, '')}\n\`\`\``;
+  if (tag === 'pre') return `\`\`\`\n${node.innerText.replace(/\n$/, '')}\n\`\`\`\n`;
   if (/^h[1-6]$/.test(tag)) return `${'#'.repeat(Number(tag[1]))} ${inner}\n`;
   if (tag === 'blockquote') return `${node.innerText.split('\n').map(line => `> ${line}`).join('\n')}\n`;
   if (tag === 'a') return `[${inner}](${node.href})`;
@@ -487,14 +487,15 @@ function placeCaretAtEnd(element) {
   const lastMeaningfulNode = target
     ? [...target.childNodes].reverse().find(node => node.nodeType !== Node.TEXT_NODE || node.textContent.length > 0)
     : null;
-  const inlineCode = lastMeaningfulNode?.nodeType === Node.ELEMENT_NODE && lastMeaningfulNode.matches('code')
+  const inlineFormatting = lastMeaningfulNode?.nodeType === Node.ELEMENT_NODE
+    && lastMeaningfulNode.matches('code, strong, b, em, i, del, s')
     ? lastMeaningfulNode
     : null;
-  if (inlineCode) {
-    let caretText = inlineCode.nextSibling;
+  if (inlineFormatting) {
+    let caretText = inlineFormatting.nextSibling;
     if (!caretText || caretText.nodeType !== Node.TEXT_NODE) {
       caretText = document.createTextNode('\u200B');
-      inlineCode.after(caretText);
+      inlineFormatting.after(caretText);
     } else if (!caretText.textContent) {
       caretText.textContent = '\u200B';
     }
@@ -508,14 +509,108 @@ function placeCaretAtEnd(element) {
   selection.removeAllRanges();
   selection.addRange(range);
 }
+function placeCaretAtStart(element) {
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  range.collapse(true);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+function placeCaretAfterInlineFormatting(element) {
+  let textNode = element.nextSibling;
+  if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
+    textNode = document.createTextNode('\u200B');
+    element.after(textNode);
+  } else if (!textNode.textContent) {
+    textNode.textContent = '\u200B';
+  }
+  const range = document.createRange();
+  range.setStart(textNode, textNode.textContent.startsWith('\u200B') ? 1 : 0);
+  range.collapse(true);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+function inlineFormattingAtCaret() {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount || !selection.isCollapsed) return null;
+  const anchor = selection.anchorNode;
+  const element = anchor?.nodeType === Node.ELEMENT_NODE ? anchor : anchor?.parentElement;
+  const formatting = element?.closest?.('code, strong, b, em, i, del, s');
+  return formatting?.closest?.('pre') ? null : formatting;
+}
+function exitInlineFormattingAtCaret() {
+  const selection = window.getSelection();
+  const formatting = inlineFormattingAtCaret();
+  if (!formatting) return;
+  const tail = selection.getRangeAt(0).cloneRange();
+  tail.selectNodeContents(formatting);
+  tail.setStart(selection.anchorNode, selection.anchorOffset);
+  if (!tail.toString()) placeCaretAfterInlineFormatting(formatting);
+}
+function composerCaretOffset() {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount || !selection.isCollapsed) return null;
+  const range = selection.getRangeAt(0);
+  if (!composerInput.contains(range.startContainer)) return null;
+  const beforeCaret = range.cloneRange();
+  beforeCaret.selectNodeContents(composerInput);
+  beforeCaret.setEnd(range.startContainer, range.startOffset);
+  return beforeCaret.toString().replace(/\u200B/g, '').length;
+}
+function restoreComposerCaret(offset) {
+  if (offset === null) return;
+  const walker = document.createTreeWalker(composerInput, NodeFilter.SHOW_TEXT);
+  let remaining = offset;
+  let node;
+  while ((node = walker.nextNode())) {
+    const visibleText = node.textContent.replace(/\u200B/g, '');
+    if (remaining <= visibleText.length) {
+      const range = document.createRange();
+      range.setStart(node, Math.min(remaining, node.textContent.length));
+      range.collapse(true);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return;
+    }
+    remaining -= visibleText.length;
+  }
+  placeCaretAtEnd(composerInput);
+}
+function composerCaretAtBoundary(direction) {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount || !selection.isCollapsed) return false;
+  const range = selection.getRangeAt(0).cloneRange();
+  if (direction < 0) {
+    range.setStart(composerInput, 0);
+  } else {
+    range.setEnd(composerInput, composerInput.childNodes.length);
+  }
+  return !range.toString().replace(/\u200B/g, '');
+}
+function placeCaretAfterCode(codeBlock) {
+  const paragraph = document.createElement('p');
+  paragraph.append(document.createElement('br'));
+  codeBlock.after(paragraph);
+  const range = document.createRange();
+  range.setStart(paragraph, 0);
+  range.collapse(true);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
 function formatComposer() {
   const source = composerMarkdown();
+  const caretOffset = composerCaretOffset();
   // Keep an empty line created with Shift+Enter editable. Rendering Markdown
   // would otherwise discard that trailing blank line and move the caret back.
   if (source.endsWith('\n')) return;
   if (!source.trim()) return composerInput.replaceChildren();
   renderMarkdown(composerInput, source);
-  placeCaretAtEnd(composerInput);
+  restoreComposerCaret(caretOffset);
+  exitInlineFormattingAtCaret();
 }
 function setComposerMarkdown(source) {
   clearTimeout(composerFormatTimer);
@@ -541,46 +636,103 @@ composerInput.oninput = event => {
   composerHistoryIndex = composerHistory.length;
   composerDraft = composerMarkdown();
   clearTimeout(composerFormatTimer);
+  const selection = window.getSelection();
+  const anchor = selection?.anchorNode;
+  const anchorElement = anchor?.nodeType === Node.ELEMENT_NODE ? anchor : anchor?.parentElement;
+  // A rendered code block is already WYSIWYG. Re-rendering it after each
+  // keystroke collapses browser-created blank lines, so leave its DOM intact.
+  if (anchorElement?.closest?.('pre')) return;
   // Do not re-render an opening backtick. Transform only a completed inline
   // code pair or a line containing exactly three backticks.
   if (event.data === '`') {
     const source = composerMarkdown();
     const currentLine = source.split('\n').at(-1);
-    if (currentLine === '```' || /`[^`\n]+`/.test(source)) formatComposer();
+    if (currentLine === '```' || /`[^`\n]+`/.test(source)) {
+      formatComposer();
+      exitInlineFormattingAtCaret();
+    }
     return;
   }
   composerFormatTimer = setTimeout(formatComposer, 350);
 };
+composerInput.onmousedown = event => {
+  const lastBlock = composerInput.lastElementChild;
+  if (event.target !== composerInput || !lastBlock?.matches('pre')) return;
+  if (event.clientY <= lastBlock.getBoundingClientRect().bottom) return;
+  event.preventDefault();
+  placeCaretAfterCode(lastBlock);
+};
 composerInput.onkeydown = event => {
-  if (!event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
-      && (event.key === 'ArrowUp' || event.key === 'ArrowDown')
-      && navigateComposerHistory(event.key === 'ArrowUp' ? -1 : 1)) {
-    event.preventDefault();
-    return;
-  }
   const selection = window.getSelection();
   const anchor = selection?.anchorNode;
   const anchorElement = anchor?.nodeType === Node.ELEMENT_NODE ? anchor : anchor?.parentElement;
   const codeBlock = anchorElement?.closest?.('pre');
-  if (event.key === 'ArrowDown' && codeBlock && selection.isCollapsed) {
+  const inlineFormatting = inlineFormattingAtCaret();
+  if (event.key === 'Backspace' && codeBlock && selection.isCollapsed) {
+    const codeText = codeBlock.textContent.replace(/\u200B/g, '');
+    if (!codeText.trim()) {
+      event.preventDefault();
+      const previousBlock = codeBlock.previousElementSibling;
+      const nextBlock = codeBlock.nextElementSibling;
+      if (previousBlock) {
+        codeBlock.remove();
+        placeCaretAtEnd(previousBlock);
+      } else if (nextBlock) {
+        codeBlock.remove();
+        placeCaretAtStart(nextBlock);
+      } else {
+        const paragraph = document.createElement('p');
+        paragraph.append(document.createElement('br'));
+        codeBlock.replaceWith(paragraph);
+        placeCaretAtStart(paragraph);
+      }
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    const before = range.cloneRange();
+    before.selectNodeContents(codeBlock);
+    before.setEnd(range.startContainer, range.startOffset);
+    if (!before.toString().replace(/\u200B/g, '')) {
+      event.preventDefault();
+      const paragraph = document.createElement('p');
+      paragraph.textContent = codeBlock.innerText.replace(/\u200B/g, '').replace(/\n$/, '');
+      codeBlock.replaceWith(paragraph);
+      placeCaretAtStart(paragraph);
+      return;
+    }
+  }
+  if (event.key === 'ArrowRight' && inlineFormatting && selection.isCollapsed) {
+    const range = selection.getRangeAt(0);
+    const tail = range.cloneRange();
+    tail.selectNodeContents(inlineFormatting);
+    tail.setStart(range.endContainer, range.endOffset);
+    if (!tail.toString()) {
+      event.preventDefault();
+      placeCaretAfterInlineFormatting(inlineFormatting);
+      return;
+    }
+  }
+  if ((event.key === 'ArrowDown' || event.key === 'ArrowRight') && codeBlock && selection.isCollapsed) {
     const range = selection.getRangeAt(0);
     const tail = range.cloneRange();
     tail.selectNodeContents(codeBlock);
     tail.setStart(range.endContainer, range.endOffset);
     if (!tail.toString()) {
       event.preventDefault();
-      const paragraph = document.createElement('p');
-      paragraph.append(document.createElement('br'));
-      codeBlock.after(paragraph);
-      const nextRange = document.createRange();
-      nextRange.setStart(paragraph, 0);
-      nextRange.collapse(true);
-      selection.removeAllRanges();
-      selection.addRange(nextRange);
+      const nextBlock = codeBlock.nextElementSibling;
+      if (nextBlock) placeCaretAtStart(nextBlock);
+      else placeCaretAfterCode(codeBlock);
       return;
     }
   }
-  if (event.key === 'Enter' && !event.shiftKey) {
+  if (!event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
+      && (event.key === 'ArrowUp' || event.key === 'ArrowDown')
+      && composerCaretAtBoundary(event.key === 'ArrowUp' ? -1 : 1)
+      && navigateComposerHistory(event.key === 'ArrowUp' ? -1 : 1)) {
+    event.preventDefault();
+    return;
+  }
+  if (event.key === 'Enter' && !event.shiftKey && !codeBlock) {
     event.preventDefault();
     composerForm.requestSubmit();
   }

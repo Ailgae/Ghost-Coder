@@ -236,6 +236,8 @@ html, body {
   white-space: pre;
 }
 .markdown pre code { padding: 0; background: transparent; }
+.composer-input pre { min-height: 1.4em; line-height: 1.4; }
+.composer-input pre code { display: block; min-height: 1.4em; }
 .markdown blockquote {
   margin: 0.5em 0;
   padding-left: 0.8em;
