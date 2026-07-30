@@ -8,6 +8,8 @@ tests, builds — anything), and loop on tool calls until the task is done.
 
 ![Ghost Coder app showing a coding conversation and file changes](assets/app-screenshot.png)
 
+For the latest release, see [the releases page](https://github.com/AILGAE/Ghost-Coder/releases/tag/first).
+
 ## 1. Requirements
 - [Node.js](https://nodejs.org) 22.12+ (required by the Electron build toolchain)
 - A machine that can run Ollama with a tool-calling-capable model pulled, e.g.:
