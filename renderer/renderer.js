@@ -244,6 +244,7 @@ function appendInlineMarkdown(parent, source) {
 function renderMarkdown(element, markdown) {
   element.replaceChildren();
   const lines = String(markdown || '').replace(/\r\n?/g, '\n').split('\n');
+  const { splitTableRow, tableAlignments } = window.GhostMarkdownTables;
   let paragraph = [];
   let list = null;
   let quote = [];
@@ -280,6 +281,44 @@ function renderMarkdown(element, markdown) {
       code.textContent = codeLines.join('\n');
       pre.append(code);
       element.append(pre);
+      continue;
+    }
+    const alignments = index + 1 < lines.length ? tableAlignments(lines[index + 1]) : null;
+    if (alignments && line.includes('|')) {
+      flushParagraph(); flushList(); flushQuote();
+      const headers = splitTableRow(line);
+      const tableWrap = document.createElement('div');
+      tableWrap.className = 'table-wrap';
+      const table = document.createElement('table');
+      const head = document.createElement('thead');
+      const headRow = document.createElement('tr');
+      headers.forEach((content, column) => {
+        const cell = document.createElement('th');
+        if (alignments[column]) cell.style.textAlign = alignments[column];
+        appendInlineMarkdown(cell, content);
+        headRow.append(cell);
+      });
+      head.append(headRow);
+      table.append(head);
+
+      const body = document.createElement('tbody');
+      index += 2;
+      while (index < lines.length && lines[index].trim() && lines[index].includes('|')) {
+        const row = document.createElement('tr');
+        const cells = splitTableRow(lines[index]);
+        headers.forEach((_, column) => {
+          const cell = document.createElement('td');
+          if (alignments[column]) cell.style.textAlign = alignments[column];
+          appendInlineMarkdown(cell, cells[column] || '');
+          row.append(cell);
+        });
+        body.append(row);
+        index++;
+      }
+      if (body.children.length) table.append(body);
+      tableWrap.append(table);
+      element.append(tableWrap);
+      index--;
       continue;
     }
     if (!line.trim()) {

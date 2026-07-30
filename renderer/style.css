@@ -247,6 +247,32 @@ html, body {
 }
 .markdown a { color: #8ab4f8; }
 .markdown hr { border: 0; border-top: 1px solid var(--border); margin: 0.8em 0; }
+.markdown .table-wrap {
+  max-width: 100%;
+  margin: 0.5em 0 0.8em;
+  overflow-x: auto;
+}
+.markdown table {
+  width: max-content;
+  min-width: 100%;
+  border-spacing: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.markdown th, .markdown td {
+  padding: 7px 10px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.markdown th {
+  background: #292a2e;
+  font-weight: 600;
+}
+.markdown th:last-child, .markdown td:last-child { border-right: 0; }
+.markdown tbody tr:last-child td { border-bottom: 0; }
 
 .bubble.error {
   align-self: flex-start;
