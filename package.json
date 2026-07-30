@@ -9,7 +9,10 @@
     "dist": "electron-builder build",
     "test": "mocha \"tests/**/*.test.js\""
   },
-  "author": "Eugene",
+  "author": {
+    "name": "AILGAE",
+    "email":"no@email.com"
+  },
   "license": "ISC",
   "devDependencies": {
     "electron": "^43.2.0",

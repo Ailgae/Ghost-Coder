@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { randomUUID } = require('crypto');
@@ -174,9 +174,10 @@ function restoreChange(project, change) {
 function createWindow() {
   const win = new BrowserWindow({
     width: 900, height: 700, minWidth: 480, minHeight: 400,
-    backgroundColor: '#1e1f22', titleBarStyle: 'hiddenInset',
+    backgroundColor: '#1e1f22', titleBarStyle: 'hiddenInset', autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
   });
+  win.setMenu(null);
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   return win;
 }
@@ -267,6 +268,7 @@ function cancelPendingApprovals(sender) {
 }
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null);
   const win = createWindow();
   ipcMain.handle('settings:get', () => settings);
   ipcMain.handle('settings:set', (_evt, partial) => { settings = { ...settings, ...partial }; saveSettings(); return settings; });
