@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('vibe', {
   setSettings: (partial) => ipcRenderer.invoke('settings:set', partial),
   pickDirectory: () => ipcRenderer.invoke('settings:pickDirectory'),
   listModels: () => ipcRenderer.invoke('models:list'),
+  checkServer: () => ipcRenderer.invoke('server:check'),
   listProjects: () => ipcRenderer.invoke('projects:list'),
   createProject: (project) => ipcRenderer.invoke('projects:create', project),
   updateProject: (project) => ipcRenderer.invoke('projects:update', project),

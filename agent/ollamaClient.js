@@ -110,14 +110,27 @@ async function chat({ serverUrl, model, messages, tools, stream = true, requireT
   return message;
 }
 
-async function listModels(serverUrl) {
+async function listModels(serverUrl, { signal, timeoutMs = 4000 } = {}) {
   const url = `${serverUrl.replace(/\/$/, '')}/api/tags`;
-  console.log(`Fetching models from URL: ${url}`);
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to list models (${res.status})`);
-  const data = await res.json();
-  console.log(`Received response:`, data);
-  return (data.models || []).map(m => m.name);
+  const timeoutController = new AbortController();
+  const timeout = setTimeout(() => timeoutController.abort(), timeoutMs);
+  const abort = () => timeoutController.abort();
+  if (signal?.aborted) abort();
+  else signal?.addEventListener('abort', abort, { once: true });
+  try {
+    const res = await fetch(url, { signal: timeoutController.signal });
+    if (!res.ok) throw new Error(`Failed to list models (${res.status})`);
+    const data = await res.json();
+    return (data.models || []).map(m => m.name);
+  } catch (error) {
+    if (timeoutController.signal.aborted && !signal?.aborted) {
+      throw new Error(`Server did not respond within ${timeoutMs / 1000} seconds`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', abort);
+  }
 }
 
 module.exports = { chat, listModels };

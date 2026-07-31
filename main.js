@@ -277,6 +277,14 @@ app.whenReady().then(() => {
     return result.canceled || !result.filePaths[0] ? null : result.filePaths[0];
   });
   ipcMain.handle('models:list', () => listModels(settings.serverUrl));
+  ipcMain.handle('server:check', async () => {
+    try {
+      await listModels(settings.serverUrl, { timeoutMs: 2500 });
+      return { connected: true };
+    } catch (error) {
+      return { connected: false, error: error.message };
+    }
+  });
 
   ipcMain.handle('projects:list', () => settings.projects);
   ipcMain.handle('projects:create', (_evt, project) => {

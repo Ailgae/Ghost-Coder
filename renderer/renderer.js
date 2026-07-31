@@ -6,9 +6,26 @@ const projectModal = $('projectModal'), projectForm = $('projectForm'), projectN
 const diffModal = $('diffModal'), diffTitleEl = $('diffTitle'), diffStatsEl = $('diffStats'), diffContentEl = $('diffContent');
 let sending = false, projects = [], activeProjectId = null, activeChatId = null, editingProjectId = null, streamingBubble = null;
 let composerHistory = [], composerHistoryIndex = 0, composerDraft = '';
+let serverCheckInFlight = false, serverCheckGeneration = 0;
+const SERVER_CHECK_INTERVAL_MS = 3000;
 
 function setStatus(text) { statusEl.textContent = text; }
 function setServerStatus(text, state = 'checking') { serverStatusTextEl.textContent = text; connectionBtn.classList.toggle('connected', state === 'connected'); connectionBtn.classList.toggle('error', state === 'error'); }
+async function checkServerStatus({ showChecking = false } = {}) {
+  if (serverCheckInFlight) return;
+  serverCheckInFlight = true;
+  const generation = serverCheckGeneration;
+  if (showChecking) setServerStatus('Checking server…');
+  try {
+    const result = await window.vibe.checkServer();
+    if (generation !== serverCheckGeneration) return;
+    setServerStatus(result.connected ? 'Server connected' : 'Server unavailable', result.connected ? 'connected' : 'error');
+  } catch {
+    if (generation === serverCheckGeneration) setServerStatus('Server unavailable', 'error');
+  } finally {
+    serverCheckInFlight = false;
+  }
+}
 function setSending(value) {
   sending = value;
   sendBtn.hidden = value;
@@ -434,6 +451,7 @@ function addApproval(event) {
 function setModelOptions(models, selected, placeholder) { modelEl.replaceChildren(); const first = new Option(placeholder, ''); first.disabled = true; modelEl.add(first); models.forEach(model => modelEl.add(new Option(model, model))); modelEl.value = models.includes(selected) ? selected : ''; }
 function preferredModel(models, preferred) { if (models.includes(preferred)) return preferred; if (preferred && !preferred.includes(':') && models.includes(`${preferred}:latest`)) return `${preferred}:latest`; return models[0] || ''; }
 async function refreshModelList(preferred = modelEl.value) {
+  setServerStatus('Connecting…');
   modelEl.disabled = true; setModelOptions([], '', 'Loading models...');
   try { const models = await window.vibe.listModels(); if (!models.length) { setModelOptions([], '', 'No models available'); setServerStatus('Connected — no models', 'connected'); return; }
     const selected = preferredModel(models, preferred); setModelOptions(models, selected, 'Select a model...'); if (selected !== preferred) await window.vibe.setSettings({ model: selected }); modelEl.disabled = false; setServerStatus('Server connected', 'connected');
@@ -470,6 +488,9 @@ function closeProjectModal() { projectModal.hidden = true; }
 function showNoProject() { activeProjectId = null; activeChatId = null; composerHistory = []; composerHistoryIndex = 0; composerDraft = ''; composerInput.replaceChildren(); messagesEl.replaceChildren(); chatTitleEl.textContent = 'No project selected'; setStatus('No projects. Add a project to start.'); }
 async function initialize() { setSending(false); const settings = await window.vibe.getSettings(); serverUrlEl.value = settings.serverUrl || ''; streamResponsesEl.checked = settings.streamResponses !== false; allowGitEl.checked = settings.allowGit === true; projects = await window.vibe.listProjects(); activeProjectId = settings.activeProjectId || projects[0]?.id || null; if (activeProjectId) { const chats = await window.vibe.listChats(activeProjectId); await selectChat(chats[0]?.id, false); } else showNoProject(); await renderProjects(); refreshModelList(settings.model || ''); }
 
+setInterval(() => { if (!document.hidden) checkServerStatus(); }, SERVER_CHECK_INTERVAL_MS);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkServerStatus(); });
+
 $('addProjectBtn').onclick = () => openProjectModal();
 $('pickProjectDirBtn').onclick = async () => { const path = await window.vibe.pickDirectory(); if (path) { projectPathEl.value = path; if (!projectNameEl.value) projectNameEl.value = path.split('/').filter(Boolean).pop() || ''; } };
 $('cancelProjectBtn').onclick = closeProjectModal; projectModal.onclick = event => { if (event.target === projectModal) closeProjectModal(); };
@@ -487,7 +508,16 @@ $('connectionModal').onclick = event => { if (event.target === $('connectionModa
 $('cancelSettingsBtn').onclick = () => { $('settingsModal').hidden = true; };
 $('settingsModal').onclick = event => { if (event.target === $('settingsModal')) $('settingsModal').hidden = true; };
 $('settingsForm').onsubmit = async event => { event.preventDefault(); await window.vibe.setSettings({ streamResponses: streamResponsesEl.checked, allowGit: allowGitEl.checked }); $('settingsModal').hidden = true; };
-$('connectionForm').onsubmit = async event => { event.preventDefault(); await window.vibe.setSettings({ serverUrl: serverUrlEl.value.trim() }); await refreshModelList(modelEl.value); $('connectionModal').hidden = true; };
+$('connectionForm').onsubmit = async event => {
+  event.preventDefault();
+  const serverUrl = serverUrlEl.value.trim();
+  if (!serverUrl) return setStatus('Enter a server URL');
+  serverCheckGeneration += 1;
+  setServerStatus('Connecting…');
+  await window.vibe.setSettings({ serverUrl });
+  $('connectionModal').hidden = true;
+  refreshModelList(modelEl.value);
+};
 modelEl.onchange = () => window.vibe.setSettings({ model: modelEl.value });
 stopBtn.onclick = async () => { if (sending) { stopBtn.disabled = true; setStatus('Stopping…'); await window.vibe.stopMessage(); } };
 let composerFormatTimer = null;
